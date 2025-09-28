@@ -1,7 +1,7 @@
 {
-  "name": "react-native-remote-update",
+  "name": "flopy-react-native-sdk",
   "version": "0.1.9",
-  "description": "react-native-remote-update",
+  "description": "flopy-react-native-sdk",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
