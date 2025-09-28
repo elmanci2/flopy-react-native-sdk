@@ -6,7 +6,7 @@ import { updateManager } from './services/UpdateManager';
 import NativeBridge from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
 import { InstallMode, SyncStatus } from './types';
-import type { PackageInfo, SyncOptions } from './types/sdk';
+import type { FlopyOptions, PackageInfo, SyncOptions } from './types/sdk';
 
 export { FlopyProvider } from './FlopyProvider';
 export { SyncStatus };
@@ -16,6 +16,15 @@ class Flopy {
   //   await stateRepository.initialize(options);
   //   apiClient.configure(options.serverUrl);
   // }
+  //
+  /**
+   * Método de configuración INTERNO. Solo debe ser llamado por el FlopyProvider.
+   * @internal
+   */
+  static async internalConfigure(options: FlopyOptions): Promise<void> {
+    await stateRepository.initialize(options);
+    apiClient.configure(options.serverUrl);
+  }
 
   static async sync(options: SyncOptions = {}): Promise<SyncStatus> {
     const {
@@ -115,5 +124,7 @@ class Flopy {
     return stateRepository.getCurrentPackage();
   }
 }
+
+export * from './types';
 
 export default Flopy;

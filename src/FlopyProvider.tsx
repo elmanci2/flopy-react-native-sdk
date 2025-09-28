@@ -1,11 +1,12 @@
 // src/FlopyProvider.tsx
 
 import React, { type ReactNode } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
 import NativeBridge from './native/NativeBridge';
 import type { FlopyOptions } from './types';
+import Flopy from 'react-native-remote-update';
 
 interface FlopyProviderProps {
   children: ReactNode;
@@ -46,6 +47,7 @@ class FlopyProvider extends React.Component<
     try {
       // 1. Configura e inicializa todos los servicios
       console.log('[Flopy] Provider montado. Inicializando SDK...');
+      await Flopy.internalConfigure(this.props.options);
       await stateRepository.initialize(this.props.options);
       apiClient.configure(this.props.options.serverUrl);
       console.log('[Flopy] SDK inicializado con éxito.');
@@ -98,9 +100,7 @@ class FlopyProvider extends React.Component<
     if (!this.state.isInitialized) {
       return (
         this.props.fallback || (
-          <View
-            style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
-          >
+          <View style={styles.container}>
             <ActivityIndicator size="large" />
           </View>
         )
@@ -120,3 +120,7 @@ class FlopyProvider extends React.Component<
 }
 
 export { FlopyProvider };
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+});
