@@ -34,13 +34,18 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val packageManager = reactContext.packageManager
       val packageName = reactContext.packageName
       val packageInfo = packageManager.getPackageInfo(packageName, 0)
-      constants["binaryVersion"] = packageInfo.versionName
+
+      constants["binaryVersion"] = packageInfo.versionName ?: ""
+      // ------------------------------------
+
     } catch (e: Exception) {
       Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
+      // También es buena idea establecer un valor por defecto aquí en caso de excepción
+      constants["binaryVersion"] = ""
     }
     return constants
-  }
+  
 
   /**
    * Lee el contenido del archivo de metadatos. Devuelve el contenido como string o null si no
