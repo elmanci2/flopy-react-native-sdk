@@ -25,7 +25,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     activity.runOnUiThread { activity.recreate() }
   }
 
-  /** Expone constantes inmutables al lado JS. */
   override fun getConstants(): Map<String, Any> {
     val constants = mutableMapOf<String, Any>()
     try {
@@ -35,16 +34,18 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val packageManager = reactContext.packageManager
       val packageName = reactContext.packageName
       val packageInfo = packageManager.getPackageInfo(packageName, 0)
-
       constants["binaryVersion"] = packageInfo.versionName ?: ""
 
+      val contentResolver = reactContext.contentResolver
+      // ------------------------------------
+
       val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-      constants["clientUniqueId"] = androidId ?: "" // Proporciona un fallback
+      constants["clientUniqueId"] = androidId ?: ""
     } catch (e: Exception) {
       Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
       constants["binaryVersion"] = ""
-      constants["clientUniqueId"] = "" // Asegura que la clave siempre exista
+      constants["clientUniqueId"] = ""
     }
     return constants
   }
