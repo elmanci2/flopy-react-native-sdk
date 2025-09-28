@@ -1,7 +1,6 @@
 import RNFS from 'react-native-fs';
 
 import NativeBridge from '../native/NativeBridge';
-import DeviceInfo from 'react-native-device-info';
 
 import type { FlopyOptions, FlopyState, PackageInfo } from '../types';
 
@@ -21,7 +20,7 @@ class StateRepository {
 
     const nativeConstants = NativeBridge.getConstants();
     const autoDetectedVersion = nativeConstants.binaryVersion;
-    const autoDetectedUniqueId = await DeviceInfo.getUniqueId();
+    const autoDetectedUniqueId = nativeConstants.clientUniqueId;
 
     this.options = {
       ...developerOptions,

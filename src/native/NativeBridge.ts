@@ -12,6 +12,7 @@ interface INativeBridge {
     flopyPath: string;
     initialBundlePath: string;
     binaryVersion: string;
+    clientUniqueId: string;
   };
 }
 

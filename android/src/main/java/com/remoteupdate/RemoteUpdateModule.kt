@@ -1,5 +1,6 @@
 package com.remoteupdate
 
+import android.provider.Settings
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
@@ -24,7 +25,7 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     activity.runOnUiThread { activity.recreate() }
   }
 
-  /** Expone constantes estáticas a JavaScript. */
+  /** Expone constantes inmutables al lado JS. */
   override fun getConstants(): Map<String, Any> {
     val constants = mutableMapOf<String, Any>()
     try {
@@ -36,16 +37,17 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val packageInfo = packageManager.getPackageInfo(packageName, 0)
 
       constants["binaryVersion"] = packageInfo.versionName ?: ""
-      // ------------------------------------
 
+      val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+      constants["clientUniqueId"] = androidId ?: "" // Proporciona un fallback
     } catch (e: Exception) {
       Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
-      // También es buena idea establecer un valor por defecto aquí en caso de excepción
       constants["binaryVersion"] = ""
+      constants["clientUniqueId"] = "" // Asegura que la clave siempre exista
     }
     return constants
-  
+  }
 
   /**
    * Lee el contenido del archivo de metadatos. Devuelve el contenido como string o null si no
