@@ -1,6 +1,7 @@
 // android/src/main/java/com/remoteupdate/RemoteUpdateModule.kt
 package com.remoteupdate
 
+import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 
@@ -8,34 +9,28 @@ import com.facebook.react.module.annotations.ReactModule
 class RemoteUpdateModule(reactContext: ReactApplicationContext) :
         ReactContextBaseJavaModule(reactContext) {
 
-  // Obtenemos una instancia de nuestro cerebro nativo
-  private val flopyInstance: Flopy by lazy {
-    Flopy.getInstance(
-            reactApplicationContext
-    ) // Usamos reactApplicationContext aquí también por consistencia
-  }
+  private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactApplicationContext) }
 
   override fun getName(): String {
     return NAME
   }
 
-  override fun getConstants(): Map<String, Any>? {
+  override fun getConstants(): Map<String, Any> {
     val constants = mutableMapOf<String, Any>()
     try {
-      // --- CORRECCIÓN AQUÍ ---
-      // Usamos `reactApplicationContext` que es una propiedad de la clase base
-      val host = reactApplicationContext.reactInstanceManager.reactNativeHost
+      val reactApp = reactApplicationContext.applicationContext as ReactApplication
+      val host = reactApp.reactNativeHost
       val initialBundlePath = host.jsBundleFile ?: "assets://index.android.bundle"
       val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
       constants["initialBundlePath"] = initialBundlePath
-
-      return constants
     } catch (e: Exception) {
       e.printStackTrace()
-      return mapOf("flopyPath" to "", "initialBundlePath" to "")
+      constants["flopyPath"] = ""
+      constants["initialBundlePath"] = ""
     }
+    return constants
   }
 
   @ReactMethod
@@ -44,9 +39,9 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
     if (activity != null) {
       activity.runOnUiThread {
         try {
-          // --- Y CORRECCIÓN AQUÍ ---
-          // Usamos `reactApplicationContext` para acceder al instanceManager
-          reactApplicationContext.reactInstanceManager.recreateReactContextInBackground()
+          val reactApp = reactApplicationContext.applicationContext as ReactApplication
+          val reactInstanceManager = reactApp.reactNativeHost.reactInstanceManager
+          reactInstanceManager.recreateReactContextInBackground()
         } catch (e: Exception) {
           e.printStackTrace()
         }
