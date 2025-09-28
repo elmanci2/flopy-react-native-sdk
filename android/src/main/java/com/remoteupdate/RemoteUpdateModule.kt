@@ -5,11 +5,15 @@ import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 
 @ReactModule(name = RemoteUpdateModule.NAME)
-class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
+class RemoteUpdateModule(reactContext: ReactApplicationContext) :
         ReactContextBaseJavaModule(reactContext) {
 
   // Obtenemos una instancia de nuestro cerebro nativo
-  private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactContext) }
+  private val flopyInstance: Flopy by lazy {
+    Flopy.getInstance(
+            reactApplicationContext
+    ) // Usamos reactApplicationContext aquí también por consistencia
+  }
 
   override fun getName(): String {
     return NAME
@@ -18,9 +22,11 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
   override fun getConstants(): Map<String, Any>? {
     val constants = mutableMapOf<String, Any>()
     try {
-      val host = reactContext.reactInstanceManager.reactNativeHost
+      // --- CORRECCIÓN AQUÍ ---
+      // Usamos `reactApplicationContext` que es una propiedad de la clase base
+      val host = reactApplicationContext.reactInstanceManager.reactNativeHost
       val initialBundlePath = host.jsBundleFile ?: "assets://index.android.bundle"
-      val flopyDir = reactContext.filesDir.resolve("flopy")
+      val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
       constants["initialBundlePath"] = initialBundlePath
@@ -38,7 +44,9 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     if (activity != null) {
       activity.runOnUiThread {
         try {
-          reactContext.reactInstanceManager.recreateReactContextInBackground()
+          // --- Y CORRECCIÓN AQUÍ ---
+          // Usamos `reactApplicationContext` para acceder al instanceManager
+          reactApplicationContext.reactInstanceManager.recreateReactContextInBackground()
         } catch (e: Exception) {
           e.printStackTrace()
         }
@@ -57,8 +65,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
   }
 
   companion object {
-    // Mantenemos el nombre del módulo antiguo para compatibilidad con tu JS si es necesario
-    // Pero idealmente lo cambiamos a "FlopyModule" para claridad.
-    const val NAME = "RemoteUpdate" // O "FlopyModule"
+    const val NAME = "RemoteUpdate"
   }
 }
