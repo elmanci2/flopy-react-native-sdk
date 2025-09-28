@@ -1,19 +1,25 @@
+// src/FlopyProvider.tsx
+
 import React, { type ReactNode } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { stateRepository } from './services/StateRepository';
-import NativeBridge from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
+import NativeBridge from './native/NativeBridge';
+import type { FlopyOptions } from './types';
 
 interface FlopyProviderProps {
   children: ReactNode;
-  fallback?: ReactNode; // Un componente a mostrar mientras se revierte
+  options: FlopyOptions;
+  fallback?: ReactNode;
 }
 
 interface FlopyProviderState {
   hasError: boolean;
   isReverting: boolean;
+  isInitialized: boolean;
 }
 
-const CRASH_TIME_LIMIT_MS = 5000; // Si la app crashea en los primeros 5s, es sospechoso
+const CRASH_TIME_LIMIT_MS = 5000;
 
 class FlopyProvider extends React.Component<
   FlopyProviderProps,
@@ -23,12 +29,45 @@ class FlopyProvider extends React.Component<
 
   constructor(props: FlopyProviderProps) {
     super(props);
-    this.state = { hasError: false, isReverting: false };
+    this.state = {
+      hasError: false,
+      isReverting: false,
+      isInitialized: false, // <-- Empieza como no inicializado
+    };
     this.appStartTime = Date.now();
   }
 
   static getDerivedStateFromError(_: Error): Partial<FlopyProviderState> {
     return { hasError: true };
+  }
+
+  // La inicialización ahora ocurre aquí
+  async componentDidMount(): Promise<void> {
+    try {
+      // 1. Configura e inicializa todos los servicios
+      console.log('[Flopy] Provider montado. Inicializando SDK...');
+      await stateRepository.initialize(this.props.options);
+      apiClient.configure(this.props.options.serverUrl);
+      console.log('[Flopy] SDK inicializado con éxito.');
+
+      // 2. Si el componente se monta con éxito, significa que el bundle es estable.
+      const state = stateRepository.getState();
+      if (state.failedBootCount > 0) {
+        console.log(
+          '[Flopy] App iniciada con éxito. Reportando éxito y reseteando estado.'
+        );
+        // (La lógica de reporte de éxito se puede añadir aquí después)
+        await stateRepository.resetBootStatus();
+      }
+    } catch (e) {
+      console.error(
+        '[Flopy] Fallo crítico durante la inicialización del SDK:',
+        e
+      );
+      this.setState({ hasError: true }); // Marca un error si la inicialización falla
+    } finally {
+      this.setState({ isInitialized: true }); // Indica que la inicialización ha terminado
+    }
   }
 
   async componentDidCatch(
@@ -37,56 +76,37 @@ class FlopyProvider extends React.Component<
   ): Promise<void> {
     console.error('[Flopy] Error de renderizado capturado:', error, errorInfo);
 
+    // Esta lógica ahora es segura porque componentDidMount (y la inicialización)
+    // se ejecuta antes que componentDidCatch.
     const timeSinceAppStart = Date.now() - this.appStartTime;
     if (timeSinceAppStart <= CRASH_TIME_LIMIT_MS) {
       const state = stateRepository.getState();
-      const options = stateRepository.getOptions();
-
       if (state.currentPackage) {
-        console.log('[Flopy] Crash detectado al inicio. Registrando fallo...');
         await stateRepository.recordFailedBoot();
-
         const newState = stateRepository.getState();
         if (newState.failedBootCount >= 2) {
-          console.log('[Flopy] Demasiados fallos. Reverting y reportando...');
-          // ¡REPORTA EL FALLO A LA API!
-          await apiClient.reportStatus(
-            options,
-            state.currentPackage.releaseId,
-            'FAILURE'
-          ); // <-- `releaseId` necesario en el estado
           this.setState({ isReverting: true });
           await stateRepository.revertToPreviousPackage();
-          NativeBridge.restartApp(); // Fuerza el reinicio para aplicar el rollback
+          NativeBridge.restartApp();
         }
       }
     }
   }
 
-  async componentDidMount(): Promise<void> {
-    try {
-      const state = stateRepository.getState();
-      const options = stateRepository.getOptions();
-
-      // Si el componente se monta con éxito, significa que el bundle es estable.
-      if (state.failedBootCount > 0) {
-        console.log(
-          '[Flopy] App iniciada con éxito. Reportando éxito y reseteando estado.'
-        );
-        // ¡REPORTA EL ÉXITO A LA API!
-        await apiClient.reportStatus(
-          options,
-          state.currentPackage!.releaseId,
-          'SUCCESS'
-        );
-        await stateRepository.resetBootStatus();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
   render() {
+    // Mientras el SDK se inicializa, muestra una pantalla de carga.
+    if (!this.state.isInitialized) {
+      return (
+        this.props.fallback || (
+          <View
+            style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+          >
+            <ActivityIndicator size="large" />
+          </View>
+        )
+      );
+    }
+
     if (this.state.hasError && this.state.isReverting) {
       return this.props.fallback || null;
     }

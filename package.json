@@ -1,6 +1,6 @@
 {
   "name": "flopy-react-native-sdk",
-  "version": "0.2.0-alpha.8",
+  "version": "0.2.0-alpha.15",
   "description": "flopy-react-native-sdk",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
@@ -761,6 +761,8 @@
     "rc": "^1.2.8",
     "react-devtools-core": "^5.3.2",
     "react-is": "^18.3.1",
+    "react-native-device-info": "^14.1.1",
+    "react-native-zip-archive": "^7.0.2",
     "react-refresh": "^0.14.2",
     "read-pkg": "^3.0.0",
     "read-pkg-up": "^7.0.1",

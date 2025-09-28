@@ -4,8 +4,9 @@ export interface FlopyOptions {
   serverUrl: string;
   appId: string;
   channel: string;
-  binaryVersion: string; // Renombrado para consistencia
-  clientUniqueId: string;
+
+  binaryVersion?: string;
+  clientUniqueId?: string;
 }
 
 export enum SyncStatus {

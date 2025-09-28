@@ -6,17 +6,16 @@ import { updateManager } from './services/UpdateManager';
 import NativeBridge from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
 import { InstallMode, SyncStatus } from './types';
-import type { FlopyOptions } from './types';
 import type { PackageInfo, SyncOptions } from './types/sdk';
 
 export { FlopyProvider } from './FlopyProvider';
 export { SyncStatus };
 
 class Flopy {
-  static async configure(options: FlopyOptions): Promise<void> {
-    await stateRepository.initialize(options);
-    apiClient.configure(options.serverUrl);
-  }
+  // static async configure(options: FlopyOptions): Promise<void> {
+  //   await stateRepository.initialize(options);
+  //   apiClient.configure(options.serverUrl);
+  // }
 
   static async sync(options: SyncOptions = {}): Promise<SyncStatus> {
     const {

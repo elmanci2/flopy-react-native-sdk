@@ -1,10 +1,10 @@
-// android/src/main/java/com/remoteupdate/Flopy.kt
 package com.remoteupdate
 
 import android.content.Context
 import java.io.File
 import org.json.JSONObject
 
+/** Lógica de bajo nivel para la selección del bundle al arrancar y gestión de fallos. */
 class Flopy(private val context: Context) {
   private val flopyDir = File(context.filesDir, "flopy")
   private val metadataFile = File(flopyDir, "flopy.json")
@@ -18,6 +18,7 @@ class Flopy(private val context: Context) {
                     }
   }
 
+  // Método principal llamado por MainApplication
   fun getJSBundleFile(): String? {
     if (!metadataFile.exists()) return null
     try {
@@ -34,17 +35,16 @@ class Flopy(private val context: Context) {
       }
     } catch (e: Exception) {
       e.printStackTrace()
-      return null
     }
     return null
   }
 
+  // Métodos llamados por el módulo de React Native
   fun incrementFailedBootCount() {
     if (!metadataFile.exists()) return
     try {
       val metadata = JSONObject(metadataFile.readText())
-      val newCount = metadata.optInt("failedBootCount", 0) + 1
-      metadata.put("failedBootCount", newCount)
+      metadata.put("failedBootCount", metadata.optInt("failedBootCount", 0) + 1)
       metadataFile.writeText(metadata.toString())
     } catch (e: Exception) {
       e.printStackTrace()

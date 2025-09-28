@@ -1,6 +1,7 @@
 import RNFS from 'react-native-fs';
 
 import NativeBridge from '../native/NativeBridge';
+import DeviceInfo from 'react-native-device-info';
 
 import type { FlopyOptions, FlopyState, PackageInfo } from '../types';
 
@@ -15,9 +16,24 @@ class StateRepository {
    * Inicializa el repositorio. Debe llamarse una sola vez al configurar la app.
    * Carga las constantes nativas y el estado desde el disco.
    */
-  async initialize(options: FlopyOptions): Promise<void> {
+  async initialize(developerOptions: FlopyOptions): Promise<void> {
     if (this.isInitialized) return;
-    this.options = options;
+
+    const nativeConstants = NativeBridge.getConstants();
+    const autoDetectedVersion = nativeConstants.binaryVersion;
+    const autoDetectedUniqueId = await DeviceInfo.getUniqueId();
+
+    this.options = {
+      ...developerOptions,
+      binaryVersion: developerOptions.binaryVersion || autoDetectedVersion,
+      clientUniqueId: developerOptions.clientUniqueId || autoDetectedUniqueId,
+    };
+
+    if (!this.options.binaryVersion) {
+      throw new Error(
+        'La versión binaria no pudo ser autodetectada y no fue proporcionada. Por favor, añádela a las opciones de configure().'
+      );
+    }
 
     // Obtenemos las rutas directamente del módulo nativo
     const constants = NativeBridge.getConstants();
