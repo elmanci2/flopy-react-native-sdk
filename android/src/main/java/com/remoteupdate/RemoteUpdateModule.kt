@@ -19,7 +19,8 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
       val reactApp = reactApplicationContext.applicationContext as? ReactApplication
       val host = reactApp?.reactNativeHost
 
-      val initialBundlePath = host?.jsBundleFile ?: "assets://index.android.bundle"
+      val initialBundlePath = host?.getJSBundleFile() ?: "assets://index.android.bundle"
+
       val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
