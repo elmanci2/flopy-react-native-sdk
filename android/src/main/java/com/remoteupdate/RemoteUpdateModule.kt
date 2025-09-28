@@ -5,10 +5,10 @@ import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 
 @ReactModule(name = RemoteUpdateModule.NAME)
-class RemoteUpdateModule(reactContext: ReactApplicationContext) :
+class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
         ReactContextBaseJavaModule(reactContext) {
 
-  private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactApplicationContext) }
+  private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactContext) }
 
   override fun getName(): String = NAME
 
@@ -16,7 +16,7 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
     val constants = mutableMapOf<String, Any>()
     try {
       // Este es el directorio seguro para todas nuestras operaciones.
-      val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
+      val flopyDir = reactContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
       // Devolvemos el path por defecto. El JS no necesita saber si fue sobreescrito.
@@ -32,14 +32,19 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   fun restartApp() {
     val activity = currentActivity ?: return
+
+    // Accedemos al ReactInstanceManager a través del ReactContext, que es la forma segura.
+    val reactInstanceManager = reactContext.reactInstanceManager
+    if (reactInstanceManager == null) {
+      Log.e(NAME, "ReactInstanceManager is null, cannot restart app.")
+      return
+    }
+
     activity.runOnUiThread {
       try {
-        // Obtenemos la instancia de forma segura
-        val reactInstanceManager =
-                (activity.application as ReactApplication).reactNativeHost.reactInstanceManager
         reactInstanceManager.recreateReactContextInBackground()
       } catch (e: Exception) {
-        Log.e(NAME, "Failed to restart app", e)
+        Log.e(NAME, "Failed to restart app via recreateReactContextInBackground", e)
       }
     }
   }
