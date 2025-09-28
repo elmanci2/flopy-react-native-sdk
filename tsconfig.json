@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "rootDir": ".",
+    "skipLibCheck": true,
+    "types": ["jest"],
     "paths": {
-      "react-native-remote-update": ["./src"]
+      "react-native-remote-update": ["./src/index.ts"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
@@ -21,9 +23,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
     "verbatimModuleSyntax": true
-  }
+  },
+  "include": ["src", "global.d.ts"],
+  "exclude": ["node_modules"]
 }
