@@ -1,7 +1,6 @@
 package com.remoteupdate
 
 import android.util.Log
-import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 
@@ -16,15 +15,12 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
   override fun getConstants(): Map<String, Any> {
     val constants = mutableMapOf<String, Any>()
     try {
-      val reactApp = reactApplicationContext.applicationContext as? ReactApplication
-      val host = reactApp?.reactNativeHost
-
-      val initialBundlePath = host?.getJSBundleFile() ?: "assets://index.android.bundle"
-
+      // Este es el directorio seguro para todas nuestras operaciones.
       val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
-      constants["initialBundlePath"] = initialBundlePath
+      // Devolvemos el path por defecto. El JS no necesita saber si fue sobreescrito.
+      constants["initialBundlePath"] = "assets://index.android.bundle"
     } catch (e: Exception) {
       Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
@@ -35,11 +31,13 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun restartApp() {
-    currentActivity?.runOnUiThread {
+    val activity = currentActivity ?: return
+    activity.runOnUiThread {
       try {
-        val reactApp = reactApplicationContext.applicationContext as? ReactApplication
-        val reactInstanceManager = reactApp?.reactNativeHost?.reactInstanceManager
-        reactInstanceManager?.recreateReactContextInBackground()
+        // Obtenemos la instancia de forma segura
+        val reactInstanceManager =
+                (activity.application as ReactApplication).reactNativeHost.reactInstanceManager
+        reactInstanceManager.recreateReactContextInBackground()
       } catch (e: Exception) {
         Log.e(NAME, "Failed to restart app", e)
       }
