@@ -1,6 +1,6 @@
 {
   "name": "flopy-react-native-sdk",
-  "version": "0.2.0-alpha.6",
+  "version": "0.2.0-alpha.8",
   "description": "flopy-react-native-sdk",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
