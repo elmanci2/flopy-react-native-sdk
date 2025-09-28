@@ -1,6 +1,6 @@
-// android/src/main/java/com/remoteupdate/RemoteUpdateModule.kt
 package com.remoteupdate
 
+import android.util.Log
 import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
@@ -11,22 +11,21 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
 
   private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactApplicationContext) }
 
-  override fun getName(): String {
-    return NAME
-  }
+  override fun getName(): String = NAME
 
   override fun getConstants(): Map<String, Any> {
     val constants = mutableMapOf<String, Any>()
     try {
-      val reactApp = reactApplicationContext.applicationContext as ReactApplication
-      val host = reactApp.reactNativeHost
-      val initialBundlePath = host.jsBundleFile ?: "assets://index.android.bundle"
+      val reactApp = reactApplicationContext.applicationContext as? ReactApplication
+      val host = reactApp?.reactNativeHost
+
+      val initialBundlePath = host?.jsBundleFile ?: "assets://index.android.bundle"
       val flopyDir = reactApplicationContext.filesDir.resolve("flopy")
 
       constants["flopyPath"] = flopyDir.absolutePath
       constants["initialBundlePath"] = initialBundlePath
     } catch (e: Exception) {
-      e.printStackTrace()
+      Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
       constants["initialBundlePath"] = ""
     }
@@ -35,16 +34,13 @@ class RemoteUpdateModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun restartApp() {
-    val activity = currentActivity
-    if (activity != null) {
-      activity.runOnUiThread {
-        try {
-          val reactApp = reactApplicationContext.applicationContext as ReactApplication
-          val reactInstanceManager = reactApp.reactNativeHost.reactInstanceManager
-          reactInstanceManager.recreateReactContextInBackground()
-        } catch (e: Exception) {
-          e.printStackTrace()
-        }
+    currentActivity?.runOnUiThread {
+      try {
+        val reactApp = reactApplicationContext.applicationContext as? ReactApplication
+        val reactInstanceManager = reactApp?.reactNativeHost?.reactInstanceManager
+        reactInstanceManager?.recreateReactContextInBackground()
+      } catch (e: Exception) {
+        Log.e(NAME, "Failed to restart app", e)
       }
     }
   }
