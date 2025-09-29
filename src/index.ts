@@ -57,23 +57,34 @@ class Flopy {
     } = options;
 
     // `releaseId` se define aquí para que esté disponible en el bloque catch.
-    let releaseId: string | undefined = undefined;
+    let releaseId: string | null = null;
 
     try {
       // 1. Instala cualquier actualización que esté pendiente desde la última sincronización.
       const pendingUpdate = stateRepository.getPendingUpdate();
       if (pendingUpdate) {
+        console.log(
+          `[Flopy] Se encontró una actualización pendiente: ${pendingUpdate.hash}`
+        );
         const mode = pendingUpdate.isMandatory
           ? mandatoryInstallMode
           : installMode;
-        if (mode === InstallMode.IMMEDIATE) {
+
+        // El modo ON_NEXT_RESTART significa "instalar ahora, ya que este ES el siguiente reinicio".
+        if (
+          mode === InstallMode.IMMEDIATE ||
+          mode === InstallMode.ON_NEXT_RESTART
+        ) {
           console.log(
-            '[Flopy] Instalando actualización pendiente inmediatamente...'
+            '[Flopy] Aplicando actualización pendiente y reiniciando...'
           );
+          // Mueve el paquete de "pendiente" a "actual".
           await stateRepository.recordNewPackage(pendingUpdate);
+          // Limpia el estado pendiente.
           await stateRepository.clearPendingUpdate();
+          // Reinicia para que el cambio surta efecto.
           NativeBridge.restartApp();
-          return SyncStatus.UPDATE_INSTALLED; // Teóricamente no se alcanza por el reinicio.
+          return SyncStatus.UPDATE_INSTALLED; // No se alcanza, pero es correcto.
         }
       }
 
@@ -86,18 +97,17 @@ class Flopy {
       );
 
       if (!response.updateAvailable || !response.package) {
-        // Aprovecha para limpiar archivos viejos si no hay nada que hacer.
         await updateManager.cleanupOldUpdates();
         console.log('[Flopy] La aplicación está actualizada.');
         return SyncStatus.UP_TO_DATE;
       }
 
-      // Guardamos el releaseId en cuanto lo sabemos.
-      releaseId = response.package.releaseId;
       const newPackage = response.package;
       console.log(
-        `[Flopy] Actualización encontrada (releaseId: ${releaseId}). Procediendo a la descarga.`
+        `[Flopy] Actualización encontrada (releaseId: ${newPackage.releaseId}).`
       );
+
+      releaseId = response.package.releaseId;
 
       // 3. Descarga la actualización (completa o parche).
       const newPackageInfo = await updateManager.downloadAndApply(
@@ -105,7 +115,7 @@ class Flopy {
         response.patch
       );
 
-      // 4. Decide cómo instalar según el modo.
+      // 4. Decide si instalar ahora o guardarla como pendiente.
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
         : installMode;
@@ -115,6 +125,7 @@ class Flopy {
         await stateRepository.recordNewPackage(newPackageInfo);
         NativeBridge.restartApp();
       } else {
+        // ON_NEXT_RESTART
         console.log(
           '[Flopy] Actualización descargada. Se instalará en el próximo reinicio.'
         );
