@@ -12,18 +12,42 @@ export { FlopyProvider } from './FlopyProvider';
 export { SyncStatus };
 
 class Flopy {
-  // static async configure(options: FlopyOptions): Promise<void> {
-  //   await stateRepository.initialize(options);
-  //   apiClient.configure(options.serverUrl);
-  // }
-  //
   /**
-   * Método de configuración INTERNO. Solo debe ser llamado por el FlopyProvider.
-   * @internal
+   * @internal - Orquesta toda la configuración del SDK. Solo debe ser llamado por el FlopyProvider.
    */
-  static async internalConfigure(options: FlopyOptions): Promise<void> {
-    await stateRepository.initialize(options);
-    apiClient.configure(options.serverUrl);
+  static async _internalConfigure(
+    developerOptions: FlopyOptions
+  ): Promise<void> {
+    // 1. Autodetecta valores desde el puente nativo.
+    const nativeConstants = NativeBridge.getConstants();
+
+    // 2. Fusiona las opciones del desarrollador con las autodetectadas.
+    const finalOptions: Required<FlopyOptions> = {
+      serverUrl: developerOptions.serverUrl,
+      appId: developerOptions.appId,
+      channel: developerOptions.channel,
+      binaryVersion:
+        developerOptions.binaryVersion || nativeConstants.binaryVersion,
+      clientUniqueId:
+        developerOptions.clientUniqueId || nativeConstants.clientUniqueId,
+    };
+
+    // 3. Valida que las opciones requeridas estén presentes.
+    if (
+      !finalOptions.serverUrl ||
+      !finalOptions.appId ||
+      !finalOptions.channel
+    ) {
+      throw new Error(
+        'Faltan opciones requeridas en la configuración de Flopy: serverUrl, appId, o channel.'
+      );
+    }
+
+    // 4. Configura los servicios dependientes con las opciones FINALES.
+    apiClient.configure(finalOptions.serverUrl);
+    await stateRepository.initialize(finalOptions);
+
+    console.log('[Flopy] SDK configurado e inicializado con éxito.');
   }
 
   static async sync(options: SyncOptions = {}): Promise<SyncStatus> {
@@ -32,10 +56,11 @@ class Flopy {
       mandatoryInstallMode = InstallMode.IMMEDIATE,
     } = options;
 
-    let releaseId: string | null = null;
+    // `releaseId` se define aquí para que esté disponible en el bloque catch.
+    let releaseId: string | undefined = undefined;
 
     try {
-      // 1. Instala cualquier actualización que esté pendiente desde la última sincronización
+      // 1. Instala cualquier actualización que esté pendiente desde la última sincronización.
       const pendingUpdate = stateRepository.getPendingUpdate();
       if (pendingUpdate) {
         const mode = pendingUpdate.isMandatory
@@ -48,11 +73,11 @@ class Flopy {
           await stateRepository.recordNewPackage(pendingUpdate);
           await stateRepository.clearPendingUpdate();
           NativeBridge.restartApp();
-          return SyncStatus.UPDATE_INSTALLED; // Teóricamente no se alcanza por el reinicio
+          return SyncStatus.UPDATE_INSTALLED; // Teóricamente no se alcanza por el reinicio.
         }
       }
 
-      // 2. Comprueba si hay una nueva actualización en el servidor
+      // 2. Comprueba si hay una nueva actualización en el servidor.
       const stateOptions = stateRepository.getOptions();
       const currentPackage = stateRepository.getCurrentPackage();
       const response = await apiClient.checkForUpdate(
@@ -61,20 +86,26 @@ class Flopy {
       );
 
       if (!response.updateAvailable || !response.package) {
-        // Aprovecha para limpiar archivos viejos si no hay nada que hacer
+        // Aprovecha para limpiar archivos viejos si no hay nada que hacer.
         await updateManager.cleanupOldUpdates();
+        console.log('[Flopy] La aplicación está actualizada.');
         return SyncStatus.UP_TO_DATE;
       }
 
+      // Guardamos el releaseId en cuanto lo sabemos.
+      releaseId = response.package.releaseId;
       const newPackage = response.package;
+      console.log(
+        `[Flopy] Actualización encontrada (releaseId: ${releaseId}). Procediendo a la descarga.`
+      );
 
-      // 3. Descarga la actualización (completa o parche)
+      // 3. Descarga la actualización (completa o parche).
       const newPackageInfo = await updateManager.downloadAndApply(
         newPackage,
         response.patch
       );
 
-      // 4. Decide cómo instalar según el modo
+      // 4. Decide cómo instalar según el modo.
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
         : installMode;
@@ -93,10 +124,8 @@ class Flopy {
         );
       }
 
-      releaseId = response.package.releaseId;
-
       return SyncStatus.UPDATE_INSTALLED;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Flopy] Error durante sync:', error);
       if (releaseId) {
         const stateOptions = stateRepository.getOptions();

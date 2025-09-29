@@ -33,7 +33,7 @@ class FlopyProvider extends React.Component<
     this.state = {
       hasError: false,
       isReverting: false,
-      isInitialized: false, // <-- Empieza como no inicializado
+      isInitialized: false,
     };
     this.appStartTime = Date.now();
   }
@@ -42,33 +42,43 @@ class FlopyProvider extends React.Component<
     return { hasError: true };
   }
 
-  // La inicialización ahora ocurre aquí
   async componentDidMount(): Promise<void> {
     try {
-      // 1. Configura e inicializa todos los servicios
-      console.log('[Flopy] Provider montado. Inicializando SDK...');
-      await Flopy.internalConfigure(this.props.options);
-      await stateRepository.initialize(this.props.options);
-      apiClient.configure(this.props.options.serverUrl);
-      console.log('[Flopy] SDK inicializado con éxito.');
-
-      // 2. Si el componente se monta con éxito, significa que el bundle es estable.
-      const state = stateRepository.getState();
-      if (state.failedBootCount > 0) {
-        console.log(
-          '[Flopy] App iniciada con éxito. Reportando éxito y reseteando estado.'
-        );
-        // (La lógica de reporte de éxito se puede añadir aquí después)
-        await stateRepository.resetBootStatus();
-      }
-    } catch (e) {
-      console.error(
-        '[Flopy] Fallo crítico durante la inicialización del SDK:',
-        e
+      console.log(
+        '[Flopy] Provider montado. Orquestando inicialización y sync...'
       );
-      this.setState({ hasError: true }); // Marca un error si la inicialización falla
-    } finally {
-      this.setState({ isInitialized: true }); // Indica que la inicialización ha terminado
+
+      // --- 1. ÚNICA LLAMADA DE CONFIGURACIÓN ---
+      // Flopy._internalConfigure se encarga de todo: autodetección,
+      // configuración de apiClient y stateRepository.
+      await Flopy._internalConfigure(this.props.options);
+
+      // 2. Si el arranque fue exitoso, resetea el contador y reporta el éxito.
+      const state = stateRepository.getState();
+      const options = stateRepository.getOptions();
+      if (state.currentPackage && state.failedBootCount > 0) {
+        console.log(
+          '[Flopy] App iniciada con éxito tras un fallo. Reportando éxito...'
+        );
+        // ¡REPORTA EL ÉXITO A LA API!
+        await apiClient.reportStatus(
+          options,
+          state.currentPackage.releaseId,
+          'SUCCESS'
+        );
+        stateRepository.resetBootStatus(); // Le dice al nativo que resetee el contador
+      }
+
+      this.setState({ isInitialized: true });
+      console.log(
+        '[Flopy] SDK inicializado. Iniciando primera sincronización...'
+      );
+
+      // 3. Llama al sync automático después de la inicialización.
+      await Flopy.sync();
+    } catch (e) {
+      console.error('[Flopy] Fallo crítico durante la inicialización:', e);
+      this.setState({ isInitialized: true, hasError: true });
     }
   }
 
@@ -78,25 +88,48 @@ class FlopyProvider extends React.Component<
   ): Promise<void> {
     console.error('[Flopy] Error de renderizado capturado:', error, errorInfo);
 
-    // Esta lógica ahora es segura porque componentDidMount (y la inicialización)
-    // se ejecuta antes que componentDidCatch.
     const timeSinceAppStart = Date.now() - this.appStartTime;
     if (timeSinceAppStart <= CRASH_TIME_LIMIT_MS) {
-      const state = stateRepository.getState();
-      if (state.currentPackage) {
-        await stateRepository.recordFailedBoot();
-        const newState = stateRepository.getState();
-        if (newState.failedBootCount >= 2) {
-          this.setState({ isReverting: true });
-          await stateRepository.revertToPreviousPackage();
-          NativeBridge.restartApp();
+      try {
+        const state = stateRepository.getState();
+        const options = stateRepository.getOptions();
+
+        if (state.currentPackage) {
+          console.log(
+            '[Flopy] Crash detectado al inicio. Registrando fallo...'
+          );
+
+          // 1. Le dice al NATIVO que incremente el contador en el disco.
+          // Esto es CRÍTICO para que el próximo arranque falle.
+          stateRepository.recordFailedBoot();
+
+          // 2. Comprueba el estado actual en memoria para decidir si revertir.
+          if (state.failedBootCount + 1 >= 2) {
+            console.log('[Flopy] Demasiados fallos. Reverting y reportando...');
+
+            // Reporta el fallo a la API
+            await apiClient.reportStatus(
+              options,
+              state.currentPackage.releaseId,
+              'FAILURE'
+            );
+
+            this.setState({ isReverting: true });
+
+            // Actualiza el estado en memoria y lo escribe en el disco
+            await stateRepository.revertToPreviousPackage();
+
+            // Reinicia la app
+            NativeBridge.restartApp();
+          }
         }
+      } catch (e) {
+        console.error('[Flopy] Error dentro de componentDidCatch:', e);
       }
     }
   }
 
   render() {
-    // Mientras el SDK se inicializa, muestra una pantalla de carga.
     if (!this.state.isInitialized) {
       return (
         this.props.fallback || (
@@ -112,6 +145,7 @@ class FlopyProvider extends React.Component<
     }
 
     if (this.state.hasError) {
+      // Si la inicialización falla, no renderizamos nada para evitar más errores.
       return null;
     }
 
