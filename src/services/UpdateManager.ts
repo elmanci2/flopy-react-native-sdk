@@ -1,7 +1,7 @@
 // src/services/UpdateManager.ts
 
 import RNFS from 'react-native-fs';
-import { unzip } from 'react-native-zip-archive';
+
 //@ts-ignore
 import * as jsdiff from 'diff';
 import type { UpdatePackage, UpdatePatch } from '../types/api';
@@ -101,7 +101,7 @@ class UpdateManager {
       updatePackage.hash
     );
 
-    await unzip(zipPath, newPackagePath);
+    await NativeBridge.unzip(zipPath, newPackagePath);
     await RNFS.unlink(zipPath); // Borra el .zip después de descomprimir
   }
 
@@ -140,7 +140,8 @@ class UpdateManager {
 
     // 1. Descarga y descomprime el parche
     await this.downloadFile(patch.url, patchZipPath, patch.hash);
-    await unzip(patchZipPath, patchTempDir);
+    await NativeBridge.unzip(patchZipPath, patchTempDir);
+
     await RNFS.unlink(patchZipPath);
 
     try {
