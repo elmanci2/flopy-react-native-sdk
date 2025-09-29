@@ -1,63 +1,97 @@
+// src/services/StateRepository.ts
+
 import RNFS from 'react-native-fs';
-
 import NativeBridge from '../native/NativeBridge';
-
 import type { FlopyOptions, FlopyState, PackageInfo } from '../types';
 
 class StateRepository {
   private state: FlopyState | null = null;
-  private options: FlopyOptions | null = null;
+  // El tipo ahora refleja que las opciones completas tendrán todo requerido
+  private options: Required<FlopyOptions> | null = null;
   private flopyPath: string = '';
   private metadataPath: string = '';
   private isInitialized = false;
+
+  constructor() {} // El constructor se mantiene vacío
 
   /**
    * Inicializa el repositorio. Debe llamarse una sola vez al configurar la app.
    * Carga las constantes nativas y el estado desde el disco.
    */
   async initialize(developerOptions: FlopyOptions): Promise<void> {
+    console.log('[Flopy SR] Iniciando inicialización...');
     if (this.isInitialized) return;
 
+    console.log('[Flopy SR] Obteniendo constantes nativas...');
     const nativeConstants = NativeBridge.getConstants();
+    console.log('[Flopy SR] Constantes nativas recibidas:', nativeConstants);
+
     const autoDetectedVersion = nativeConstants.binaryVersion;
     const autoDetectedUniqueId = nativeConstants.clientUniqueId;
 
+    console.log('[Flopy SR] Fusionando opciones...');
     this.options = {
       ...developerOptions,
       binaryVersion: developerOptions.binaryVersion || autoDetectedVersion,
       clientUniqueId: developerOptions.clientUniqueId || autoDetectedUniqueId,
     };
 
-    if (!this.options.binaryVersion) {
-      throw new Error(
-        'La versión binaria no pudo ser autodetectada y no fue proporcionada. Por favor, añádela a las opciones de configure().'
-      );
-    }
-
-    // Obtenemos las rutas directamente del módulo nativo
-    const constants = NativeBridge.getConstants();
-    this.flopyPath = constants.flopyPath;
+    this.flopyPath = nativeConstants.flopyPath;
     this.metadataPath = `${this.flopyPath}/metadata.json`;
+    console.log(
+      `[Flopy SR] Ruta de metadatos establecida a: ${this.metadataPath}`
+    );
 
     try {
+      console.log(
+        '[Flopy SR] Comprobando si el archivo de metadatos existe...'
+      );
       if (await RNFS.exists(this.metadataPath)) {
+        console.log('[Flopy SR] Leyendo archivo de metadatos...');
         const content = await RNFS.readFile(this.metadataPath, 'utf8');
         this.state = JSON.parse(content);
       } else {
-        // Si el archivo no existe, creamos un estado inicial limpio.
-        this.state = { failedBootCount: 0 };
-        // --- CORRECCIÓN ---
-        await this.saveState(this.state);
+        console.log(
+          '[Flopy SR] Archivo de metadatos no encontrado, creando estado inicial...'
+        );
+        this.state = {
+          failedBootCount: 0,
+          currentPackage: undefined,
+          previousPackage: undefined,
+          pendingUpdate: undefined,
+        };
+        // --- LLAMADA CORREGIDA ---
+        await this.saveState(this.state, true); // Llama con el flag de inicialización
       }
     } catch (e) {
-      // Si el JSON está corrupto o hay un error, empezamos de cero por seguridad.
-      console.error('[Flopy] Error al cargar el estado, se reiniciará:', e);
-      this.state = { failedBootCount: 0 };
-      // --- CORRECCIÓN ---
-      await this.saveState(this.state);
+      console.error(
+        '[Flopy SR] Error al leer/escribir metadatos, reiniciando estado:',
+        e
+      );
+      this.state = {
+        failedBootCount: 0,
+        currentPackage: undefined,
+        previousPackage: undefined,
+        pendingUpdate: undefined,
+      };
+      // --- LLAMADA CORREGIDA ---
+      await this.saveState(this.state, true); // Llama con el flag de inicialización
     }
 
     this.isInitialized = true;
+    console.log('[Flopy SR] Inicialización completada.');
+  }
+
+  async recordNewPackage(packageInfo: PackageInfo): Promise<void> {
+    this.ensureInitialized();
+    const currentState = this.getState();
+    const newState: FlopyState = {
+      ...currentState,
+      previousPackage: currentState.currentPackage,
+      currentPackage: packageInfo,
+      failedBootCount: 0,
+    };
+    await this.saveState(newState);
   }
 
   async recordPendingUpdate(
@@ -80,59 +114,22 @@ class StateRepository {
     await this.saveState(newState);
   }
 
-  /**
-   * Guarda una nueva actualización como el "paquete actual".
-   * El paquete que estaba corriendo antes se convierte en el "paquete previo".
-   */
-  async recordNewPackage(packageInfo: PackageInfo): Promise<void> {
-    // <-- CORRECCIÓN: solo 1 argumento
-    this.ensureInitialized();
-    const currentState = this.getState();
-
-    const newState: FlopyState = {
-      ...currentState,
-      previousPackage: currentState.currentPackage,
-      currentPackage: packageInfo,
-      failedBootCount: 0,
-    };
-
-    await this.saveState(newState);
-  }
-
-  getPreviousPackage(): PackageInfo | undefined {
-    this.ensureInitialized();
-    return this.getState().previousPackage;
-  }
-
-  getPendingUpdate(): FlopyState['pendingUpdate'] {
-    this.ensureInitialized();
-    return this.getState().pendingUpdate;
-  }
-  /**
-   * Revierte al paquete anterior. Se usa cuando el rollback automático detecta un fallo.
-   */
   async revertToPreviousPackage(): Promise<void> {
     this.ensureInitialized();
     const currentState = this.getState();
-
     if (!currentState.previousPackage) {
       await this.clearCurrentPackage();
       return;
     }
-
     const newState: FlopyState = {
       ...currentState,
       currentPackage: currentState.previousPackage,
       previousPackage: undefined,
       failedBootCount: 0,
     };
-
     await this.saveState(newState);
   }
 
-  /**
-   * Borra la información del paquete actual, haciendo que la app vuelva al bundle original.
-   */
   async clearCurrentPackage(): Promise<void> {
     this.ensureInitialized();
     const currentState = this.getState();
@@ -140,14 +137,10 @@ class StateRepository {
     await this.saveState(newState);
   }
 
-  /**
-   * Registra un arranque fallido. Llamado por el FlopyProvider en caso de crash.
-   */
   async recordFailedBoot(): Promise<void> {
     this.ensureInitialized();
     const currentState = this.getState();
     if (!currentState.currentPackage) return;
-
     const newState = {
       ...currentState,
       failedBootCount: currentState.failedBootCount + 1,
@@ -155,9 +148,6 @@ class StateRepository {
     await this.saveState(newState);
   }
 
-  /**
-   * Resetea el contador de arranques fallidos. Llamado cuando la app arranca con éxito.
-   */
   async resetBootStatus(): Promise<void> {
     this.ensureInitialized();
     const currentState = this.getState();
@@ -169,7 +159,7 @@ class StateRepository {
 
   // --- Getters ---
 
-  getOptions(): FlopyOptions {
+  getOptions(): Required<FlopyOptions> {
     this.ensureInitialized();
     return this.options!;
   }
@@ -179,8 +169,16 @@ class StateRepository {
     return this.state!;
   }
 
-  getCurrentPackage(): any | undefined {
+  getCurrentPackage(): PackageInfo | undefined {
     return this.getState().currentPackage;
+  }
+
+  getPreviousPackage(): PackageInfo | undefined {
+    return this.getState().previousPackage;
+  }
+
+  getPendingUpdate(): FlopyState['pendingUpdate'] {
+    return this.getState().pendingUpdate;
   }
 
   getFlopyPath(): string {
@@ -190,19 +188,30 @@ class StateRepository {
 
   // --- Métodos Privados ---
 
-  private async saveState(newState: FlopyState): Promise<void> {
-    this.ensureInitialized(true); // Permite llamar sin estado/opciones para el guardado inicial
-    await RNFS.mkdir(this.flopyPath);
-    await RNFS.writeFile(
-      this.metadataPath,
-      JSON.stringify(newState, null, 2),
-      'utf8'
-    );
+  private async saveState(
+    newState: FlopyState,
+    isDuringInit: boolean = false
+  ): Promise<void> {
+    // --- LÓGICA CORREGIDA ---
+    this.ensureInitialized(isDuringInit);
+
+    // Si estamos en la inicialización, el flopyPath podría no estar definido todavía.
+    // Lo obtenemos de `this` donde ya fue establecido.
+    if (this.flopyPath) {
+      await RNFS.mkdir(this.flopyPath);
+      await RNFS.writeFile(
+        this.metadataPath,
+        JSON.stringify(newState, null, 2),
+        'utf8'
+      );
+    }
     this.state = newState;
   }
 
   private ensureInitialized(allowDuringInit: boolean = false) {
-    if (allowDuringInit && this.isInitialized) return;
+    // --- LÓGICA CORREGIDA ---
+    if (allowDuringInit) return;
+
     if (!this.isInitialized || !this.state || !this.options) {
       throw new Error(
         'Flopy no ha sido inicializado. Llama a Flopy.configure() al inicio de tu app.'
