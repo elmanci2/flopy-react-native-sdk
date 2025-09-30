@@ -18,10 +18,8 @@ class Flopy {
   static async _internalConfigure(
     developerOptions: FlopyOptions
   ): Promise<void> {
-    // 1. Autodetecta valores desde el puente nativo.
     const nativeConstants = NativeBridge.getConstants();
 
-    // 2. Fusiona las opciones del desarrollador con las autodetectadas.
     const finalOptions: Required<FlopyOptions> = {
       serverUrl: developerOptions.serverUrl,
       appId: developerOptions.appId,
@@ -32,7 +30,6 @@ class Flopy {
         developerOptions.clientUniqueId || nativeConstants.clientUniqueId,
     };
 
-    // 3. Valida que las opciones requeridas estén presentes.
     if (
       !finalOptions.serverUrl ||
       !finalOptions.appId ||
@@ -43,7 +40,6 @@ class Flopy {
       );
     }
 
-    // 4. Configura los servicios dependientes con las opciones FINALES.
     apiClient.configure(finalOptions.serverUrl);
     await stateRepository.initialize(finalOptions);
 
@@ -56,11 +52,9 @@ class Flopy {
       mandatoryInstallMode = InstallMode.IMMEDIATE,
     } = options;
 
-    // `releaseId` se define aquí para que esté disponible en el bloque catch.
     let releaseId: string | null = null;
 
     try {
-      // 1. Instala cualquier actualización que esté pendiente desde la última sincronización.
       const pendingUpdate = stateRepository.getPendingUpdate();
       if (pendingUpdate) {
         console.log(
@@ -70,7 +64,6 @@ class Flopy {
           ? mandatoryInstallMode
           : installMode;
 
-        // El modo ON_NEXT_RESTART significa "instalar ahora, ya que este ES el siguiente reinicio".
         if (
           mode === InstallMode.IMMEDIATE ||
           mode === InstallMode.ON_NEXT_RESTART
@@ -78,17 +71,15 @@ class Flopy {
           console.log(
             '[Flopy] Aplicando actualización pendiente y reiniciando...'
           );
-          // Mueve el paquete de "pendiente" a "actual".
+
           await stateRepository.recordNewPackage(pendingUpdate);
-          // Limpia el estado pendiente.
+
           await stateRepository.clearPendingUpdate();
-          // Reinicia para que el cambio surta efecto.
+
           NativeBridge.restartApp();
-          return SyncStatus.UPDATE_INSTALLED; // No se alcanza, pero es correcto.
+          return SyncStatus.UPDATE_INSTALLED;
         }
       }
-
-      // 2. Comprueba si hay una nueva actualización en el servidor.
       const stateOptions = stateRepository.getOptions();
       const currentPackage = stateRepository.getCurrentPackage();
       const response = await apiClient.checkForUpdate(
@@ -109,13 +100,11 @@ class Flopy {
 
       releaseId = response.package.releaseId;
 
-      // 3. Descarga la actualización (completa o parche).
       const newPackageInfo = await updateManager.downloadAndApply(
         newPackage,
         response.patch
       );
 
-      // 4. Decide si instalar ahora o guardarla como pendiente.
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
         : installMode;
@@ -124,7 +113,6 @@ class Flopy {
         console.log('[Flopy] Instalando actualización inmediatamente...');
         await stateRepository.recordNewPackage(newPackageInfo);
 
-        // --- ¡NUEVO LOG DE VERIFICACIÓN! ---
         const finalState = stateRepository.getState();
         console.log(
           '[Flopy JS DEBUG] Estado final antes del reinicio:',
@@ -134,7 +122,6 @@ class Flopy {
 
         NativeBridge.restartApp();
       } else {
-        // ON_NEXT_RESTART
         console.log(
           '[Flopy] Actualización descargada. Se instalará en el próximo reinicio.'
         );

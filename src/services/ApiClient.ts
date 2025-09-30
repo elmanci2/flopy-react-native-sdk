@@ -14,9 +14,6 @@ class ApiClient {
     });
   }
 
-  /**
-   * Configura la URL base del cliente. Se llama desde Flopy.configure().
-   */
   configure(serverUrl: string): void {
     this.client.defaults.baseURL = serverUrl;
     this.isConfigured = true;
@@ -30,9 +27,6 @@ class ApiClient {
     }
   }
 
-  /**
-   * Llama al endpoint /check-for-update del servidor.
-   */
   async checkForUpdate(
     options: FlopyOptions,
     currentPackageHash?: string
@@ -46,7 +40,6 @@ class ApiClient {
       currentReleaseHash: currentPackageHash,
     };
 
-    console.log('[Flopy] Buscando actualizaciones con el payload:', payload);
     const response = await this.client.post<CheckForUpdateResponse>(
       '/check-for-update',
       payload
@@ -54,9 +47,6 @@ class ApiClient {
     return response.data;
   }
 
-  /**
-   * Llama al endpoint /report-status para notificar el estado de un despliegue.
-   */
   async reportStatus(
     options: FlopyOptions,
     releaseId: string,
@@ -70,10 +60,8 @@ class ApiClient {
       status,
     };
 
-    console.log('[Flopy] Reportando estado:', payload);
     await this.client.post('/report-status', payload);
   }
 }
 
-// Exportamos una instancia singleton
 export const apiClient = new ApiClient();

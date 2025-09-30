@@ -1,6 +1,9 @@
 package com.remoteupdate
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.WritableMap
 import java.io.File
 import org.json.JSONObject
 
@@ -17,22 +20,56 @@ class Flopy(private val context: Context) {
                     }
   }
 
-  fun getJSBundleFile(): String? {
-    if (!metadataFile.exists()) return null
-    try {
-      val metadata = JSONObject(metadataFile.readText())
-      val currentPackage = metadata.optJSONObject("currentPackage")
-      val failedBootCount = metadata.optInt("failedBootCount", 0)
+  private fun getPrefs(): SharedPreferences {
+    return context.getSharedPreferences("flopy_metadata", Context.MODE_PRIVATE)
+  }
 
-      if (currentPackage != null && failedBootCount < 2) {
-        val relativePath = currentPackage.getString("relativePath")
-        val bundleFile = File(flopyDir, relativePath)
-        if (bundleFile.exists()) {
-          return bundleFile.absolutePath
-        }
+  fun getJSBundleFile(): String? {
+    val prefs = getPrefs()
+
+    val currentPath = prefs.getString("current_path", null)
+    val failedBootCount = prefs.getInt("failed_boot_count", 0)
+
+    if (currentPath != null && currentPath.isNotEmpty() && failedBootCount < 2) {
+      val bundleFile = File(currentPath)
+
+      if (bundleFile.exists()) {
+        return bundleFile.absolutePath
       }
-    } catch (e: Exception) {
-      e.printStackTrace()
+    }
+
+    return null
+  }
+
+  fun saveCurrentPackage(absolutePath: String, hash: String, releaseId: String) {
+    val prefs = getPrefs()
+    val editor = prefs.edit()
+
+    editor.putString("previous_path", prefs.getString("current_path", null))
+    editor.putString("previous_hash", prefs.getString("current_hash", null))
+    editor.putString("previous_releaseId", prefs.getString("current_releaseId", null))
+
+    editor.putString("current_path", absolutePath)
+    editor.putString("current_hash", hash)
+    editor.putString("current_releaseId", releaseId)
+    editor.putInt("failed_boot_count", 0)
+
+    editor.apply()
+  }
+
+  fun saveState(state: ReadableMap) {
+    // Convierte el ReadableMap de JS a un String JSON y lo guarda
+    val jsonString =
+            state.toString() // Esto es una simplificación, la conversión real es más compleja
+    getPrefs().edit().putString("full_state_json", jsonString).apply()
+  }
+
+  fun readState(): WritableMap? {
+    // Lee el string JSON y lo convierte de vuelta a un WritableMap para JS
+    val jsonString = getPrefs().getString("full_state_json", null)
+    if (jsonString != null) {
+      // Lógica para parsear el string y crear un WritableMap
+      return Arguments.createMap() // Devuelve el mapa parseado
     }
     return null
   }

@@ -27,7 +27,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val context = reactContext
 
       if (BuildConfig.DEBUG) {
-        // 🔹 En debug reinicia solo el contexto de React (rápido, como hot reload)
         val instanceManager =
                 (context.currentActivity?.application as? ReactApplication)
                         ?.reactNativeHost
@@ -38,17 +37,15 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
             try {
               it.recreateReactContextInBackground()
             } catch (t: Throwable) {
-              // fallback si falla → recrea la Activity
               context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
             }
           }
         }
       } else {
-        // 🔹 En release reinicia el proceso completo (reinicio real)
         com.jakewharton.processphoenix.ProcessPhoenix.triggerRebirth(context)
       }
     } catch (e: Exception) {
-      // fallback final si todo falla
+
       context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
     }
   }
@@ -89,35 +86,30 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val zipFile = File(zipPath)
       val destinationDir = File(destinationPath)
 
-      // Validación de entradas
       if (!zipFile.exists()) {
         promise.reject("UNZIP_ERROR", "El archivo ZIP de origen no existe: $zipPath")
         return
       }
       if (!destinationDir.exists()) {
-        destinationDir.mkdirs() // Crea el directorio de destino si no existe
+        destinationDir.mkdirs()
       }
       if (!destinationDir.isDirectory) {
         promise.reject("UNZIP_ERROR", "La ruta de destino no es un directorio: $destinationPath")
         return
       }
 
-      // Usamos un ZipInputStream para leer el contenido del zip
       val zipInputStream = ZipInputStream(zipFile.inputStream().buffered())
 
-      // Itera sobre cada entrada (archivo/carpeta) en el zip
       zipInputStream.use { zis ->
         var zipEntry = zis.nextEntry
         while (zipEntry != null) {
           val newFile = File(destinationDir, zipEntry.name)
 
-          // Previene una vulnerabilidad de seguridad (Zip Slip)
           if (!newFile.canonicalPath.startsWith(destinationDir.canonicalPath + File.separator)) {
             throw SecurityException("Entrada de ZIP maliciosa: ${zipEntry.name}")
           }
 
           if (zipEntry.isDirectory) {
-            // Si la entrada es un directorio, lo crea
             if (!newFile.isDirectory && !newFile.mkdirs()) {
               throw java.io.IOException("Fallo al crear el directorio ${newFile.path}")
             }
@@ -128,7 +120,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
               throw java.io.IOException("Fallo al crear el directorio padre ${parent.path}")
             }
 
-            // Escribe el contenido del archivo
             val fos = FileOutputStream(newFile)
             val bos = BufferedOutputStream(fos)
             val buffer = ByteArray(4096)
@@ -142,7 +133,7 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
         }
       }
 
-      promise.resolve(true) // Éxito
+      promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("UNZIP_FAILED", "Ocurrió un error al descomprimir: ${e.message}", e)
     }
@@ -163,21 +154,53 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
         return
       }
 
-      // 1. Lee el contenido del archivo original línea por línea
       val originalLines = originalFile.readLines()
-
-      // 2. Parsea el string del parche
       val patch: Patch<String> = DiffUtils.parseUnifiedDiff(patchString.lines())
 
-      // 3. Aplica el parche a las líneas originales
       val resultLines: List<String> = DiffUtils.patch(originalLines, patch)
-
-      // 4. Escribe el nuevo contenido de vuelta al archivo original, sobrescribiéndolo
       originalFile.writeText(resultLines.joinToString("\n"))
 
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("APPLY_PATCH_FAILED", "Ocurrió un error al aplicar el parche: ${e.message}", e)
+    }
+  }
+
+  @ReactMethod
+  fun saveCurrentPackage(packageInfo: ReadableMap, promise: Promise) {
+    try {
+      val hash = packageInfo.getString("hash")!!
+      val relativePath = packageInfo.getString("relativePath")!!
+      val releaseId = packageInfo.getString("releaseId")!!
+
+      // Construimos la ruta absoluta que guardaremos
+      val flopyDir = reactContext.filesDir.resolve("flopy")
+      val absolutePath = File(flopyDir, relativePath).absolutePath
+
+      flopyInstance.saveCurrentPackage(absolutePath, hash, releaseId)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("SAVE_PACKAGE_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun saveState(state: ReadableMap, promise: Promise) {
+    try {
+      flopyInstance.saveState(state)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("SAVE_STATE_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun readState(promise: Promise) {
+    try {
+      val state = flopyInstance.readState()
+      promise.resolve(state)
+    } catch (e: Exception) {
+      promise.reject("READ_STATE_ERROR", e)
     }
   }
 
