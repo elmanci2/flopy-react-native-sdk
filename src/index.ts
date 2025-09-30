@@ -123,6 +123,15 @@ class Flopy {
       if (finalInstallMode === InstallMode.IMMEDIATE) {
         console.log('[Flopy] Instalando actualización inmediatamente...');
         await stateRepository.recordNewPackage(newPackageInfo);
+
+        // --- ¡NUEVO LOG DE VERIFICACIÓN! ---
+        const finalState = stateRepository.getState();
+        console.log(
+          '[Flopy JS DEBUG] Estado final antes del reinicio:',
+          JSON.stringify(finalState, null, 2)
+        );
+        // ------------------------------------
+
         NativeBridge.restartApp();
       } else {
         // ON_NEXT_RESTART
@@ -132,6 +141,12 @@ class Flopy {
         await stateRepository.recordPendingUpdate(
           newPackageInfo,
           newPackage.isMandatory
+        );
+
+        const finalState = stateRepository.getState();
+        console.log(
+          '[Flopy JS DEBUG] Estado final (pendiente) antes de salir:',
+          JSON.stringify(finalState, null, 2)
         );
       }
 

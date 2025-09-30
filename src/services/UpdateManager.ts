@@ -48,6 +48,11 @@ class UpdateManager {
       }
     }
 
+    console.log(
+      '[Flopy] bundle en ',
+      `updates/${updatePackage.hash}/index.android.bundle`
+    );
+
     const newPackageInfo: PackageInfo = {
       hash: updatePackage.hash,
       relativePath: `updates/${updatePackage.hash}/index.android.bundle`,
@@ -102,7 +107,21 @@ class UpdateManager {
     );
 
     await NativeBridge.unzip(zipPath, newPackagePath);
-    await RNFS.unlink(zipPath); // Borra el .zip después de descomprimir
+    await RNFS.unlink(zipPath);
+
+    const bundleFilePath = `${newPackagePath}/index.android.bundle`;
+    const bundleExists = await RNFS.exists(bundleFilePath);
+    console.log(
+      `[Flopy JS DEBUG] ¿Existe el bundle después de la descarga completa?: ${bundleExists} en ${bundleFilePath}`
+    );
+    if (!bundleExists) {
+      // Opcional: listar contenido del directorio para depurar
+      const dirContents = await RNFS.readDir(newPackagePath);
+      console.log(
+        `[Flopy JS DEBUG] Contenido de ${newPackagePath}:`,
+        JSON.stringify(dirContents.map((item) => item.name))
+      );
+    }
   }
 
   async cleanupOldUpdates(): Promise<void> {
@@ -201,6 +220,19 @@ class UpdateManager {
         }
 
         await RNFS.writeFile(originalFilePath, newContent, 'utf8');
+
+        const bundleFilePath = `${newPackagePath}/index.android.bundle`;
+        const bundleExists = await RNFS.exists(bundleFilePath);
+        console.log(
+          `[Flopy JS DEBUG] ¿Existe el bundle después de aplicar el parche?: ${bundleExists} en ${bundleFilePath}`
+        );
+        if (!bundleExists) {
+          const dirContents = await RNFS.readDir(newPackagePath);
+          console.log(
+            `[Flopy JS DEBUG] Contenido de ${newPackagePath}:`,
+            JSON.stringify(dirContents.map((item) => item.name))
+          );
+        }
       }
     } finally {
       // 5. Limpia el directorio temporal del parche, pase lo que pase

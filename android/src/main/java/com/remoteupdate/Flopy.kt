@@ -4,10 +4,9 @@ import android.content.Context
 import java.io.File
 import org.json.JSONObject
 
-/** Lógica de bajo nivel para la selección del bundle al arrancar y gestión de fallos. */
 class Flopy(private val context: Context) {
   private val flopyDir = File(context.filesDir, "flopy")
-  private val metadataFile = File(flopyDir, "flopy.json")
+  private val metadataFile = File(flopyDir, "metadata.json")
 
   companion object {
     @Volatile private var instance: Flopy? = null
@@ -18,7 +17,6 @@ class Flopy(private val context: Context) {
                     }
   }
 
-  // Método principal llamado por MainApplication
   fun getJSBundleFile(): String? {
     if (!metadataFile.exists()) return null
     try {
@@ -39,7 +37,6 @@ class Flopy(private val context: Context) {
     return null
   }
 
-  // Métodos llamados por el módulo de React Native
   fun incrementFailedBootCount() {
     if (!metadataFile.exists()) return
     try {

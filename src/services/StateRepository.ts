@@ -56,9 +56,6 @@ class StateRepository {
     console.log('[Flopy SR] Repositorio de estado inicializado.');
   }
 
-  /**
-   * Guarda un nuevo paquete y actualiza el estado local.
-   */
   async recordNewPackage(packageInfo: PackageInfo): Promise<void> {
     this.ensureInitialized();
     const currentState = this.getState();
@@ -71,9 +68,6 @@ class StateRepository {
     await this.saveState(newState);
   }
 
-  /**
-   * Guarda una actualización como "pendiente".
-   */
   async recordPendingUpdate(
     packageInfo: PackageInfo,
     isMandatory: boolean
