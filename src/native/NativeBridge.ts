@@ -1,6 +1,7 @@
 // src/native/NativeBridge.ts
 import { NativeModules } from 'react-native';
 import type { FlopyState } from '../types';
+import RNRestart from 'react-native-restart';
 
 const LINKING_ERROR = `The package 'flopy-react-native' doesn't seem to be linked.`;
 
@@ -40,5 +41,7 @@ const FlopyModule = NativeModules.FlopyModule
         return undefined;
       },
     });
+
+export { RNRestart };
 
 export default FlopyModule;

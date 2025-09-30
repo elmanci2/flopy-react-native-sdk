@@ -4,7 +4,7 @@ import React, { type ReactNode } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
-import NativeBridge from './native/NativeBridge';
+import { RNRestart } from './native/NativeBridge';
 import type { FlopyOptions } from './types';
 import Flopy from './index';
 
@@ -108,7 +108,7 @@ class FlopyProvider extends React.Component<
 
             await stateRepository.revertToPreviousPackage();
 
-            NativeBridge.restartApp();
+            RNRestart.restart();
           }
         }
       } catch (e) {

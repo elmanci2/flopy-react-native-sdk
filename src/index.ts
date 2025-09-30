@@ -3,7 +3,7 @@
 import { stateRepository } from './services/StateRepository';
 
 import { updateManager } from './services/UpdateManager';
-import NativeBridge from './native/NativeBridge';
+import NativeBridge, { RNRestart } from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
 import { InstallMode, SyncStatus } from './types';
 import type { FlopyOptions, PackageInfo, SyncOptions } from './types/sdk';
@@ -76,7 +76,7 @@ class Flopy {
 
           await stateRepository.clearPendingUpdate();
 
-          NativeBridge.restartApp();
+          RNRestart.restart();
           return SyncStatus.UPDATE_INSTALLED;
         }
       }
@@ -100,10 +100,7 @@ class Flopy {
 
       releaseId = response.package.releaseId;
 
-      const newPackageInfo = await updateManager.downloadAndApply(
-        newPackage,
-        response.patch
-      );
+      const newPackageInfo = await updateManager.downloadAndApply(newPackage);
 
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
@@ -120,7 +117,7 @@ class Flopy {
         );
         // ------------------------------------
 
-        NativeBridge.restartApp();
+        RNRestart.restart();
       } else {
         console.log(
           '[Flopy] Actualización descargada. Se instalará en el próximo reinicio.'
@@ -156,7 +153,7 @@ class Flopy {
     if (previousPackage) {
       console.log('[Flopy] Revirtiendo a la versión anterior...');
       await stateRepository.revertToPreviousPackage();
-      NativeBridge.restartApp();
+      RNRestart.restart();
     } else {
       console.log('[Flopy] No hay una versión anterior a la que revertir.');
     }
