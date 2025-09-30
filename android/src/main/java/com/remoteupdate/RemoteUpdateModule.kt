@@ -1,10 +1,11 @@
 package com.remoteupdate
 
 import android.provider.Settings
+import com.facebook.react.ReactApplication
+import com.facebook.react.ReactInstanceManager
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
-import com.github.difflib.DiffUtils
-import com.github.difflib.patch.Patch
+import com.jakewharton.processphoenix.ProcessPhoenix
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -14,39 +15,34 @@ import java.util.zip.ZipInputStream
 class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
         ReactContextBaseJavaModule(reactContext) {
 
+  private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactContext) }
   override fun getName(): String = NAME
 
-  /**
-   * Este método es solo de ejemplo. En una implementación real, la lógica de reinicio debería ser
-   * manejada de forma segura. La forma más sencilla de reiniciar es recargando el DevSupportManager
-   * en modo debug o forzando la recreación de la actividad principal.
-   */
+  private fun getReactInstanceManager(): ReactInstanceManager? {
+    val application = reactContext.applicationContext as? ReactApplication
+    return application?.reactNativeHost?.reactInstanceManager
+  }
+
   @ReactMethod
-  fun restartApp(reason: String? = null) {
-    try {
-      val context = reactContext
+  fun restartApp() {
+    val activity = currentActivity ?: return
+    val isDebug = (reactContext.applicationInfo.flags and 2) != 0
 
-      if (BuildConfig.DEBUG) {
-        val instanceManager =
-                (context.currentActivity?.application as? ReactApplication)
-                        ?.reactNativeHost
-                        ?.reactInstanceManager
-
-        instanceManager?.let {
-          Handler(Looper.getMainLooper()).post {
-            try {
-              it.recreateReactContextInBackground()
-            } catch (t: Throwable) {
-              context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
-            }
-          }
-        }
-      } else {
-        com.jakewharton.processphoenix.ProcessPhoenix.triggerRebirth(context)
+    if (isDebug) {
+      val instanceManager = getReactInstanceManager()
+      if (instanceManager == null) {
+        activity.runOnUiThread { activity.recreate() }
+        return
       }
-    } catch (e: Exception) {
-
-      context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
+      activity.runOnUiThread {
+        try {
+          instanceManager.recreateReactContextInBackground()
+        } catch (t: Throwable) {
+          activity.recreate()
+        }
+      }
+    } else {
+      ProcessPhoenix.triggerRebirth(reactContext)
     }
   }
 
@@ -62,8 +58,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       constants["binaryVersion"] = packageInfo.versionName ?: ""
 
       val contentResolver = reactContext.contentResolver
-      // ------------------------------------
-
       val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
       constants["clientUniqueId"] = androidId ?: ""
     } catch (e: Exception) {
@@ -139,33 +133,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * Aplica un parche en formato "unified diff" a un archivo de texto.
-   * @param originalFilePath La ruta absoluta al archivo que será modificado.
-   * @param patchString El contenido del parche de texto generado por jsdiff.
-   * @param promise Resuelve a `true` si tiene éxito, rechaza si falla.
-   */
-  @ReactMethod
-  fun applyPatch(originalFilePath: String, patchString: String, promise: Promise) {
-    try {
-      val originalFile = File(originalFilePath)
-      if (!originalFile.exists()) {
-        promise.reject("APPLY_PATCH_ERROR", "El archivo original no existe: $originalFilePath")
-        return
-      }
-
-      val originalLines = originalFile.readLines()
-      val patch: Patch<String> = DiffUtils.parseUnifiedDiff(patchString.lines())
-
-      val resultLines: List<String> = DiffUtils.patch(originalLines, patch)
-      originalFile.writeText(resultLines.joinToString("\n"))
-
-      promise.resolve(true)
-    } catch (e: Exception) {
-      promise.reject("APPLY_PATCH_FAILED", "Ocurrió un error al aplicar el parche: ${e.message}", e)
-    }
-  }
-
   @ReactMethod
   fun saveCurrentPackage(packageInfo: ReadableMap, promise: Promise) {
     try {
@@ -202,6 +169,16 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     } catch (e: Exception) {
       promise.reject("READ_STATE_ERROR", e)
     }
+  }
+
+  @ReactMethod
+  fun recordFailedBoot() {
+    flopyInstance.incrementFailedBootCount()
+  }
+
+  @ReactMethod
+  fun resetBootStatus() {
+    flopyInstance.resetFailedBootCount()
   }
 
   companion object {

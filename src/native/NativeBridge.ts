@@ -9,7 +9,6 @@ interface INativeBridge {
   recordFailedBoot(): void;
   resetBootStatus(): void;
   unzip(zipPath: string, destinationPath: string): Promise<boolean>;
-  applyPatch(originalFilePath: string, patchString: string): Promise<boolean>;
 
   // Métodos de persistencia
   saveState(state: FlopyState): Promise<boolean>;

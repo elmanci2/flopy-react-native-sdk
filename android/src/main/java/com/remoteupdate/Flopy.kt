@@ -3,6 +3,7 @@ package com.remoteupdate
 import android.content.Context
 import android.content.SharedPreferences
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import java.io.File
 import org.json.JSONObject

@@ -47,26 +47,21 @@ class FlopyProvider extends React.Component<
       console.log(
         '[Flopy] Provider montado. Orquestando inicialización y sync...'
       );
-
-      // --- 1. ÚNICA LLAMADA DE CONFIGURACIÓN ---
-      // Flopy._internalConfigure se encarga de todo: autodetección,
-      // configuración de apiClient y stateRepository.
       await Flopy._internalConfigure(this.props.options);
 
-      // 2. Si el arranque fue exitoso, resetea el contador y reporta el éxito.
       const state = stateRepository.getState();
       const options = stateRepository.getOptions();
       if (state.currentPackage && state.failedBootCount > 0) {
         console.log(
           '[Flopy] App iniciada con éxito tras un fallo. Reportando éxito...'
         );
-        // ¡REPORTA EL ÉXITO A LA API!
+
         await apiClient.reportStatus(
           options,
           state.currentPackage.releaseId,
           'SUCCESS'
         );
-        stateRepository.resetBootStatus(); // Le dice al nativo que resetee el contador
+        stateRepository.resetBootStatus();
       }
 
       this.setState({ isInitialized: true });
@@ -74,7 +69,6 @@ class FlopyProvider extends React.Component<
         '[Flopy] SDK inicializado. Iniciando primera sincronización...'
       );
 
-      // 3. Llama al sync automático después de la inicialización.
       await Flopy.sync();
     } catch (e) {
       console.error('[Flopy] Fallo crítico durante la inicialización:', e);
@@ -99,15 +93,11 @@ class FlopyProvider extends React.Component<
             '[Flopy] Crash detectado al inicio. Registrando fallo...'
           );
 
-          // 1. Le dice al NATIVO que incremente el contador en el disco.
-          // Esto es CRÍTICO para que el próximo arranque falle.
           stateRepository.recordFailedBoot();
 
-          // 2. Comprueba el estado actual en memoria para decidir si revertir.
           if (state.failedBootCount + 1 >= 2) {
             console.log('[Flopy] Demasiados fallos. Reverting y reportando...');
 
-            // Reporta el fallo a la API
             await apiClient.reportStatus(
               options,
               state.currentPackage.releaseId,
@@ -116,10 +106,8 @@ class FlopyProvider extends React.Component<
 
             this.setState({ isReverting: true });
 
-            // Actualiza el estado en memoria y lo escribe en el disco
             await stateRepository.revertToPreviousPackage();
 
-            // Reinicia la app
             NativeBridge.restartApp();
           }
         }

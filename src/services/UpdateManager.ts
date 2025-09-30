@@ -2,7 +2,7 @@
 
 import RNFS from 'react-native-fs';
 
-import type { UpdatePackage, UpdatePatch } from '../types/api';
+import type { UpdatePackage } from '../types/api';
 import { stateRepository } from './StateRepository';
 import NativeBridge from '../native/NativeBridge';
 import type { PackageInfo } from '../types/sdk';
@@ -23,21 +23,15 @@ class UpdateManager {
     await RNFS.mkdir(this.updatesPath);
   }
 
-  async downloadAndApply(
-    updatePackage: UpdatePackage,
-    patch?: UpdatePatch
-  ): Promise<PackageInfo> {
+  async downloadAndApply(updatePackage: UpdatePackage): Promise<PackageInfo> {
     const newPackagePath = `${this.updatesPath}/${updatePackage.hash}`;
 
     if (await RNFS.exists(newPackagePath)) {
+      console.log('[Flopy] La actualización ya existe en el disco.');
     } else {
-      if (patch) {
-        await this.applyPatch(patch, newPackagePath);
-      } else {
-        await this.downloadFullPackage(updatePackage, newPackagePath);
-      }
+      console.log('[Flopy] Descargando paquete completo...');
+      await this.downloadFullPackage(updatePackage, newPackagePath);
     }
-
     const newPackageInfo: PackageInfo = {
       hash: updatePackage.hash,
       relativePath: `updates/${updatePackage.hash}/index.android.bundle`,
@@ -110,69 +104,6 @@ class UpdateManager {
     for (const dir of updateDirs) {
       if (dir.isDirectory() && !activeHashes.includes(dir.name)) {
         await RNFS.unlink(dir.path);
-      }
-    }
-  }
-
-  private async applyPatch(
-    patch: UpdatePatch,
-    newPackagePath: string
-  ): Promise<void> {
-    const currentPackage = stateRepository.getCurrentPackage();
-    if (!currentPackage) {
-      throw new Error('No se puede aplicar un parche sin un paquete actual.');
-    }
-
-    const patchZipPath = `${this.updatesPath}/patch.zip`;
-    const patchTempDir = `${this.updatesPath}/patch_temp`;
-    const currentPackageDir = `${this.flopyPath}/updates/${currentPackage.hash}`;
-
-    await this.downloadFile(patch.url, patchZipPath, patch.hash);
-    await NativeBridge.unzip(patchZipPath, patchTempDir);
-    await RNFS.unlink(patchZipPath);
-
-    try {
-      const manifestPath = `${patchTempDir}/manifest.json`;
-      if (!(await RNFS.exists(manifestPath))) {
-        throw new Error(
-          'El manifiesto del parche (manifest.json) no fue encontrado.'
-        );
-      }
-      const manifest = JSON.parse(await RNFS.readFile(manifestPath, 'utf8'));
-
-      await RNFS.mkdir(newPackagePath);
-      const itemsInCurrentPackage = await RNFS.readDir(currentPackageDir);
-      for (const item of itemsInCurrentPackage) {
-        const destPath = `${newPackagePath}/${item.name}`;
-        await RNFS.copyFile(item.path, destPath);
-      }
-
-      for (const fileToDelete of manifest.deletedFiles) {
-        const fullPath = `${newPackagePath}/${fileToDelete}`;
-        if (await RNFS.exists(fullPath)) {
-          await RNFS.unlink(fullPath);
-        }
-      }
-
-      for (const fileToAdd of manifest.newFiles) {
-        const sourcePath = `${patchTempDir}/${fileToAdd}`;
-        const destPath = `${newPackagePath}/${fileToAdd}`;
-
-        await RNFS.mkdir(destPath.substring(0, destPath.lastIndexOf('/')), {
-          NSURLIsExcludedFromBackupKey: true,
-        });
-        await RNFS.copyFile(sourcePath, destPath);
-      }
-
-      for (const relativePath in manifest.patchedFiles) {
-        const patchContent = manifest.patchedFiles[relativePath];
-        const originalFilePath = `${newPackagePath}/${relativePath}`;
-
-        await NativeBridge.applyPatch(originalFilePath, patchContent);
-      }
-    } finally {
-      if (await RNFS.exists(patchTempDir)) {
-        await RNFS.unlink(patchTempDir);
       }
     }
   }
