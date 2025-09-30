@@ -5,7 +5,6 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactInstanceManager
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
-import com.jakewharton.processphoenix.ProcessPhoenix
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -21,29 +20,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
   private fun getReactInstanceManager(): ReactInstanceManager? {
     val application = reactContext.applicationContext as? ReactApplication
     return application?.reactNativeHost?.reactInstanceManager
-  }
-
-  @ReactMethod
-  fun restartApp() {
-    val activity = currentActivity ?: return
-    val isDebug = (reactContext.applicationInfo.flags and 2) != 0
-
-    if (isDebug) {
-      val instanceManager = getReactInstanceManager()
-      if (instanceManager == null) {
-        activity.runOnUiThread { activity.recreate() }
-        return
-      }
-      activity.runOnUiThread {
-        try {
-          instanceManager.recreateReactContextInBackground()
-        } catch (t: Throwable) {
-          activity.recreate()
-        }
-      }
-    } else {
-      ProcessPhoenix.triggerRebirth(reactContext)
-    }
   }
 
   override fun getConstants(): Map<String, Any> {
@@ -130,24 +106,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("UNZIP_FAILED", "Ocurrió un error al descomprimir: ${e.message}", e)
-    }
-  }
-
-  @ReactMethod
-  fun saveCurrentPackage(packageInfo: ReadableMap, promise: Promise) {
-    try {
-      val hash = packageInfo.getString("hash")!!
-      val relativePath = packageInfo.getString("relativePath")!!
-      val releaseId = packageInfo.getString("releaseId")!!
-
-      // Construimos la ruta absoluta que guardaremos
-      val flopyDir = reactContext.filesDir.resolve("flopy")
-      val absolutePath = File(flopyDir, relativePath).absolutePath
-
-      flopyInstance.saveCurrentPackage(absolutePath, hash, releaseId)
-      promise.resolve(true)
-    } catch (e: Exception) {
-      promise.reject("SAVE_PACKAGE_ERROR", e)
     }
   }
 

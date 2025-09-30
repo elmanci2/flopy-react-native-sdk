@@ -90,12 +90,8 @@ repositories {
 def kotlin_version = getExtOrDefault("kotlinVersion")
 
 dependencies {
-  // For < 0.71, this will be from the local maven repo
-  // For > 0.71, this will be replaced by `com.facebook.react:react-android:$version` by react gradle plugin
-  //noinspection GradleDynamicVersion
- // implementation 'io.github.java-diff-utils:java-diff-utils:4.12'
+
   implementation project(':react-native-restart')
-  implementation 'com.jakewharton:process-phoenix:2.2.0'
   implementation "com.facebook.react:react-native:+"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 }

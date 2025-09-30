@@ -1,7 +1,6 @@
 package com.remoteupdate
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
@@ -9,8 +8,8 @@ import java.io.File
 import org.json.JSONObject
 
 class Flopy(private val context: Context) {
-  private val flopyDir = File(context.filesDir, "flopy")
-  private val metadataFile = File(flopyDir, "metadata.json")
+  private val flopyDir = context.filesDir.resolve("flopy")
+  private val stateFile = File(flopyDir, "flopy_state.json")
 
   companion object {
     @Volatile private var instance: Flopy? = null
@@ -21,78 +20,134 @@ class Flopy(private val context: Context) {
                     }
   }
 
-  private fun getPrefs(): SharedPreferences {
-    return context.getSharedPreferences("flopy_metadata", Context.MODE_PRIVATE)
-  }
-
+  // EXACTAMENTE COMO TU CÓDIGO VIEJO - Simple y directo
   fun getJSBundleFile(): String? {
-    val prefs = getPrefs()
+    return if (stateFile.exists()) {
+      try {
+        val jsonString = stateFile.readText()
+        val json = JSONObject(jsonString)
+        val failedBootCount = json.optInt("failedBootCount", 0)
 
-    val currentPath = prefs.getString("current_path", null)
-    val failedBootCount = prefs.getInt("failed_boot_count", 0)
+        if (failedBootCount < 2) {
+          val currentPackage = json.optJSONObject("currentPackage")
+          val relativePath = currentPackage?.optString("relativePath")
 
-    if (currentPath != null && currentPath.isNotEmpty() && failedBootCount < 2) {
-      val bundleFile = File(currentPath)
+          if (relativePath != null) {
+            val bundleFile = File(flopyDir, relativePath)
+            if (bundleFile.exists()) {
+              return bundleFile.absolutePath
+            }
+          }
 
-      if (bundleFile.exists()) {
-        return bundleFile.absolutePath
+          // Fallback a previousPackage si currentPackage falla
+          val previousPackage = json.optJSONObject("previousPackage")
+          val prevRelativePath = previousPackage?.optString("relativePath")
+
+          if (prevRelativePath != null) {
+            val bundleFile = File(flopyDir, prevRelativePath)
+            if (bundleFile.exists()) {
+              return bundleFile.absolutePath
+            }
+          }
+        }
+        null
+      } catch (e: Exception) {
+        e.printStackTrace()
+        null
       }
+    } else {
+      null
     }
-
-    return null
   }
 
-  fun saveCurrentPackage(absolutePath: String, hash: String, releaseId: String) {
-    val prefs = getPrefs()
-    val editor = prefs.edit()
+  fun saveState(stateMap: ReadableMap?) {
+    if (stateMap == null) return
 
-    editor.putString("previous_path", prefs.getString("current_path", null))
-    editor.putString("previous_hash", prefs.getString("current_hash", null))
-    editor.putString("previous_releaseId", prefs.getString("current_releaseId", null))
+    try {
+      val json = JSONObject()
 
-    editor.putString("current_path", absolutePath)
-    editor.putString("current_hash", hash)
-    editor.putString("current_releaseId", releaseId)
-    editor.putInt("failed_boot_count", 0)
+      if (stateMap.hasKey("currentPackage")) {
+        val currentPackage = stateMap.getMap("currentPackage")
+        if (currentPackage != null) {
+          val current = JSONObject()
+          current.put("relativePath", currentPackage.getString("relativePath"))
+          current.put("hash", currentPackage.getString("hash"))
+          current.put("releaseId", currentPackage.getString("releaseId"))
+          json.put("currentPackage", current)
+        }
+      }
 
-    editor.apply()
-  }
+      if (stateMap.hasKey("previousPackage")) {
+        val previousPackage = stateMap.getMap("previousPackage")
+        if (previousPackage != null) {
+          val previous = JSONObject()
+          previous.put("relativePath", previousPackage.getString("relativePath"))
+          previous.put("hash", previousPackage.getString("hash"))
+          previous.put("releaseId", previousPackage.getString("releaseId"))
+          json.put("previousPackage", previous)
+        }
+      }
 
-  fun saveState(state: ReadableMap) {
-    // Convierte el ReadableMap de JS a un String JSON y lo guarda
-    val jsonString =
-            state.toString() // Esto es una simplificación, la conversión real es más compleja
-    getPrefs().edit().putString("full_state_json", jsonString).apply()
+      json.put("failedBootCount", stateMap.getInt("failedBootCount"))
+
+      flopyDir.mkdirs()
+      stateFile.writeText(json.toString())
+    } catch (e: Exception) {
+      e.printStackTrace()
+    }
   }
 
   fun readState(): WritableMap? {
-    // Lee el string JSON y lo convierte de vuelta a un WritableMap para JS
-    val jsonString = getPrefs().getString("full_state_json", null)
-    if (jsonString != null) {
-      // Lógica para parsear el string y crear un WritableMap
-      return Arguments.createMap() // Devuelve el mapa parseado
+    return try {
+      if (!stateFile.exists()) return null
+
+      val json = JSONObject(stateFile.readText())
+      val state = Arguments.createMap()
+
+      if (json.has("currentPackage")) {
+        val currentJson = json.getJSONObject("currentPackage")
+        val currentPackage = Arguments.createMap()
+        currentPackage.putString("relativePath", currentJson.optString("relativePath"))
+        currentPackage.putString("hash", currentJson.optString("hash"))
+        currentPackage.putString("releaseId", currentJson.optString("releaseId"))
+        state.putMap("currentPackage", currentPackage)
+      }
+
+      if (json.has("previousPackage")) {
+        val previousJson = json.getJSONObject("previousPackage")
+        val previousPackage = Arguments.createMap()
+        previousPackage.putString("relativePath", previousJson.optString("relativePath"))
+        previousPackage.putString("hash", previousJson.optString("hash"))
+        previousPackage.putString("releaseId", previousJson.optString("releaseId"))
+        state.putMap("previousPackage", previousPackage)
+      }
+
+      state.putInt("failedBootCount", json.optInt("failedBootCount", 0))
+      state
+    } catch (e: Exception) {
+      e.printStackTrace()
+      null
     }
-    return null
   }
 
   fun incrementFailedBootCount() {
-    if (!metadataFile.exists()) return
     try {
-      val metadata = JSONObject(metadataFile.readText())
-      metadata.put("failedBootCount", metadata.optInt("failedBootCount", 0) + 1)
-      metadataFile.writeText(metadata.toString())
+      if (stateFile.exists()) {
+        val json = JSONObject(stateFile.readText())
+        json.put("failedBootCount", json.optInt("failedBootCount", 0) + 1)
+        stateFile.writeText(json.toString())
+      }
     } catch (e: Exception) {
       e.printStackTrace()
     }
   }
 
   fun resetFailedBootCount() {
-    if (!metadataFile.exists()) return
     try {
-      val metadata = JSONObject(metadataFile.readText())
-      if (metadata.optInt("failedBootCount", 0) > 0) {
-        metadata.put("failedBootCount", 0)
-        metadataFile.writeText(metadata.toString())
+      if (stateFile.exists()) {
+        val json = JSONObject(stateFile.readText())
+        json.put("failedBootCount", 0)
+        stateFile.writeText(json.toString())
       }
     } catch (e: Exception) {
       e.printStackTrace()

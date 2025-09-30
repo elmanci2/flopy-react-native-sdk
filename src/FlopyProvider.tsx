@@ -4,7 +4,7 @@ import React, { type ReactNode } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
-import { RNRestart } from './native/NativeBridge';
+import NativeBridge from './native/NativeBridge'; // Asumiendo que has unificado tu puente nativo aquí
 import type { FlopyOptions } from './types';
 import Flopy from './index';
 
@@ -42,20 +42,35 @@ class FlopyProvider extends React.Component<
     return { hasError: true };
   }
 
-  async componentDidMount(): Promise<void> {
-    try {
-      console.log(
-        '[Flopy] Provider montado. Orquestando inicialización y sync...'
-      );
-      await Flopy._internalConfigure(this.props.options);
+  /**
+   * El ciclo de vida `componentDidMount` ahora es el orquestador principal.
+   * Realiza una inicialización rápida y luego delega las tareas de red al fondo.
+   */
+  componentDidMount(): void {
+    Flopy._internalConfigure(this.props.options)
+      .then(() => {
+        this.setState({ isInitialized: true });
 
+        this.runBackgroundTasks();
+      })
+      .catch((e) => {
+        console.error('[Flopy] Fallo crítico durante la inicialización:', e);
+        this.setState({ isInitialized: true, hasError: true });
+      });
+  }
+
+  /**
+   * Ejecuta las operaciones de red (reporte y sync) en segundo plano
+   * después de que la app se haya renderizado.
+   */
+  async runBackgroundTasks(): Promise<void> {
+    try {
       const state = stateRepository.getState();
       const options = stateRepository.getOptions();
       if (state.currentPackage && state.failedBootCount > 0) {
         console.log(
-          '[Flopy] App iniciada con éxito tras un fallo. Reportando éxito...'
+          '[Flopy] App iniciada con éxito tras un fallo. Reportando éxito en segundo plano...'
         );
-
         await apiClient.reportStatus(
           options,
           state.currentPackage.releaseId,
@@ -64,18 +79,20 @@ class FlopyProvider extends React.Component<
         stateRepository.resetBootStatus();
       }
 
-      this.setState({ isInitialized: true });
+      console.log('[Flopy] Iniciando sincronización en segundo plano...');
+      const status = await Flopy.sync();
       console.log(
-        '[Flopy] SDK inicializado. Iniciando primera sincronización...'
+        '[Flopy] Sincronización en segundo plano completada con estado:',
+        status
       );
-
-      await Flopy.sync();
     } catch (e) {
-      console.error('[Flopy] Fallo crítico durante la inicialización:', e);
-      this.setState({ isInitialized: true, hasError: true });
+      console.error('[Flopy] Error en tareas de fondo:', e);
     }
   }
 
+  /**
+   * Maneja los crashes de renderizado.
+   */
   async componentDidCatch(
     error: Error,
     errorInfo: React.ErrorInfo
@@ -92,23 +109,20 @@ class FlopyProvider extends React.Component<
           console.log(
             '[Flopy] Crash detectado al inicio. Registrando fallo...'
           );
-
           stateRepository.recordFailedBoot();
 
           if (state.failedBootCount + 1 >= 2) {
-            console.log('[Flopy] Demasiados fallos. Reverting y reportando...');
-
+            console.log(
+              '[Flopy] Demasiados fallos. Reportando y revirtiendo...'
+            );
             await apiClient.reportStatus(
               options,
               state.currentPackage.releaseId,
               'FAILURE'
             );
-
             this.setState({ isReverting: true });
-
             await stateRepository.revertToPreviousPackage();
-
-            RNRestart.restart();
+            NativeBridge.restartApp();
           }
         }
       } catch (e) {
@@ -133,16 +147,15 @@ class FlopyProvider extends React.Component<
     }
 
     if (this.state.hasError) {
-      // Si la inicialización falla, no renderizamos nada para evitar más errores.
-      return null;
+      return this.props.children;
     }
 
     return this.props.children;
   }
 }
 
-export { FlopyProvider };
-
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
+
+export { FlopyProvider };
