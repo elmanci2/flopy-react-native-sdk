@@ -11,6 +11,24 @@ class StateRepository {
 
   constructor() {}
 
+  async switchToVersion(packageInfo: PackageInfo): Promise<void> {
+    this.ensureInitialized();
+
+    // Opción 1: Usar el método optimizado (más rápido)
+    await NativeBridge.switchVersion(packageInfo.releaseId, packageInfo.hash);
+
+    // Actualiza el estado local
+    this.state!.previousPackage = this.state!.currentPackage;
+    this.state!.currentPackage = packageInfo;
+    this.state!.failedBootCount = 0;
+  }
+
+  async markUpdateSuccess(): Promise<void> {
+    this.ensureInitialized();
+    await NativeBridge.markSuccess();
+    this.state!.failedBootCount = 0;
+  }
+
   async initialize(developerOptions: FlopyOptions): Promise<void> {
     if (this.isInitialized) return;
 

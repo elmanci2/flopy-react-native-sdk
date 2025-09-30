@@ -59,37 +59,35 @@ class FlopyProvider extends React.Component<
       });
   }
 
-  /**
-   * Ejecuta las operaciones de red (reporte y sync) en segundo plano
-   * después de que la app se haya renderizado.
-   */
-  async runBackgroundTasks(): Promise<void> {
+  private async runBackgroundTasks(): Promise<void> {
     try {
       const state = stateRepository.getState();
       const options = stateRepository.getOptions();
-      if (state.currentPackage && state.failedBootCount > 0) {
+
+      // CAMBIO: Verifica firstTime en lugar de failedBootCount
+      if (state.currentPackage) {
+        const isFirstTime = await NativeBridge.readState();
+
         console.log(
-          '[Flopy] App iniciada con éxito tras un fallo. Reportando éxito en segundo plano...'
+          '[Flopy] Primera carga con actualización, marcando como exitosa...'
         );
-        await apiClient.reportStatus(
-          options,
-          state.currentPackage.releaseId,
-          'SUCCESS'
-        );
-        stateRepository.resetBootStatus();
+        await NativeBridge.markSuccess();
+
+        if (state.failedBootCount > 0) {
+          apiClient
+            .reportStatus(options, state.currentPackage.releaseId, 'SUCCESS')
+            .catch(console.error);
+
+          stateRepository.resetBootStatus();
+        }
       }
 
-      console.log('[Flopy] Iniciando sincronización en segundo plano...');
-      const status = await Flopy.sync();
-      console.log(
-        '[Flopy] Sincronización en segundo plano completada con estado:',
-        status
-      );
+      console.log('[Flopy] Iniciando sync en background...');
+      Flopy.sync().catch(console.error);
     } catch (e) {
-      console.error('[Flopy] Error en tareas de fondo:', e);
+      console.error('[Flopy] Error en background:', e);
     }
   }
-
   /**
    * Maneja los crashes de renderizado.
    */

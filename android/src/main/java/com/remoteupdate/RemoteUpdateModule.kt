@@ -15,6 +15,7 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
         ReactContextBaseJavaModule(reactContext) {
 
   private val flopyInstance: Flopy by lazy { Flopy.getInstance(reactContext) }
+
   override fun getName(): String = NAME
 
   private fun getReactInstanceManager(): ReactInstanceManager? {
@@ -44,12 +45,7 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     return constants
   }
 
-  /**
-   * Descomprime un archivo .zip en un directorio de destino.
-   * @param zipPath La ruta absoluta al archivo .zip a descomprimir.
-   * @param destinationPath La ruta absoluta al directorio donde se extraerán los archivos.
-   * @param promise Resuelve a `true` si tiene éxito, rechaza si falla.
-   */
+  /** Descomprime un archivo .zip en un directorio de destino. */
   @ReactMethod
   fun unzip(zipPath: String, destinationPath: String, promise: Promise) {
     try {
@@ -84,7 +80,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
               throw java.io.IOException("Fallo al crear el directorio ${newFile.path}")
             }
           } else {
-            // Si es un archivo, crea los directorios padres necesarios
             val parent = newFile.parentFile
             if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
               throw java.io.IOException("Fallo al crear el directorio padre ${parent.path}")
@@ -108,6 +103,8 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       promise.reject("UNZIP_FAILED", "Ocurrió un error al descomprimir: ${e.message}", e)
     }
   }
+
+  // ========== MÉTODOS EXISTENTES (mantienen compatibilidad) ==========
 
   @ReactMethod
   fun saveState(state: ReadableMap, promise: Promise) {
@@ -139,7 +136,68 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
     flopyInstance.resetFailedBootCount()
   }
 
+  // ========== NUEVOS MÉTODOS OPTIMIZADOS ==========
+
+  /**
+   * Cambia a una nueva versión del bundle (optimizado).
+   * @param releaseId ID del release (ej: "release-v1.2.3")
+   * @param hash Hash SHA-256 del paquete
+   */
+  @ReactMethod
+  fun switchVersion(releaseId: String, hash: String, promise: Promise) {
+    try {
+      flopyInstance.switchVersion(releaseId, hash)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("SWITCH_VERSION_ERROR", "Error al cambiar de versión: ${e.message}", e)
+    }
+  }
+
+  /** Marca la actualización actual como exitosa. Limpia versiones antiguas automáticamente. */
+  @ReactMethod
+  fun markSuccess(promise: Promise) {
+    try {
+      flopyInstance.markSuccess()
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("MARK_SUCCESS_ERROR", "Error al marcar como exitosa: ${e.message}", e)
+    }
+  }
+
+  /** Limpia el flag de primera vez (sin marcar como exitosa). */
+  @ReactMethod
+  fun clearFirstTime(promise: Promise) {
+    try {
+      flopyInstance.clearFirstTime()
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("CLEAR_FIRST_TIME_ERROR", "Error al limpiar flag: ${e.message}", e)
+    }
+  }
+
+  /** Obtiene la versión que fue revertida (si existe). */
+  @ReactMethod
+  fun getRolledBackVersion(promise: Promise) {
+    try {
+      val version = flopyInstance.getRolledBackVersion()
+      promise.resolve(version)
+    } catch (e: Exception) {
+      promise.reject("GET_ROLLBACK_ERROR", "Error al obtener versión revertida: ${e.message}", e)
+    }
+  }
+
+  /** Limpia la marca de rollback. */
+  @ReactMethod
+  fun clearRollbackMark(promise: Promise) {
+    try {
+      flopyInstance.clearRollbackMark()
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("CLEAR_ROLLBACK_ERROR", "Error al limpiar marca de rollback: ${e.message}", e)
+    }
+  }
+
   companion object {
-    const val NAME = "FlopyModule" // Asegúrate que coincida con tu NativeBridge.ts
+    const val NAME = "FlopyModule"
   }
 }
