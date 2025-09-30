@@ -1,6 +1,6 @@
 {
   "name": "flopy-react-native-sdk",
-  "version": "0.2.0-alpha.37",
+  "version": "0.2.0-alpha.38",
   "description": "flopy-react-native-sdk",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
@@ -347,7 +347,6 @@
     "deprecation": "^2.3.1",
     "destroy": "^1.2.0",
     "detect-newline": "^3.1.0",
-    "diff": "^4.0.2",
     "diff-sequences": "^29.6.3",
     "dir-glob": "^3.0.1",
     "doctrine": "^3.0.0",

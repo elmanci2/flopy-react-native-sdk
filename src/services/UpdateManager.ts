@@ -2,8 +2,6 @@
 
 import RNFS from 'react-native-fs';
 
-//@ts-ignore
-import * as jsdiff from 'diff';
 import type { UpdatePackage, UpdatePatch } from '../types/api';
 import { stateRepository } from './StateRepository';
 import NativeBridge from '../native/NativeBridge';
@@ -151,45 +149,40 @@ class UpdateManager {
 
     const patchZipPath = `${this.updatesPath}/patch.zip`;
     const patchTempDir = `${this.updatesPath}/patch_temp`;
-
-    // Construimos la ruta absoluta al directorio del paquete actual.
-    // currentPackage.relativePath es algo como "updates/HASH/index.android.bundle"
-    // Necesitamos la ruta a la carpeta "updates/HASH"
     const currentPackageDir = `${this.flopyPath}/updates/${currentPackage.hash}`;
 
     // 1. Descarga y descomprime el parche
     await this.downloadFile(patch.url, patchZipPath, patch.hash);
     await NativeBridge.unzip(patchZipPath, patchTempDir);
-
     await RNFS.unlink(patchZipPath);
 
     try {
       // 2. Lee el manifiesto del parche
       const manifestPath = `${patchTempDir}/manifest.json`;
+      if (!(await RNFS.exists(manifestPath))) {
+        throw new Error(
+          'El manifiesto del parche (manifest.json) no fue encontrado.'
+        );
+      }
       const manifest = JSON.parse(await RNFS.readFile(manifestPath, 'utf8'));
 
       // 3. Prepara el nuevo directorio de la actualización copiando el antiguo
-      // react-native-fs no tiene copyDirectory, así que lo hacemos manualmente
+      console.log(
+        `[Flopy] Copiando paquete actual de '${currentPackageDir}' a '${newPackagePath}'...`
+      );
       await RNFS.mkdir(newPackagePath);
-      const filesInCurrentPackage = await RNFS.readDir(currentPackageDir);
-      for (const item of filesInCurrentPackage) {
-        if (item.isFile()) {
-          await RNFS.copyFile(item.path, `${newPackagePath}/${item.name}`);
-        } else if (item.isDirectory()) {
-          // Manejo simple de un nivel de anidación, como la carpeta 'assets'
-          await RNFS.mkdir(`${newPackagePath}/${item.name}`);
-          const nestedItems = await RNFS.readDir(item.path);
-          for (const nested of nestedItems) {
-            await RNFS.copyFile(
-              nested.path,
-              `${newPackagePath}/${item.name}/${nested.name}`
-            );
-          }
-        }
+      const itemsInCurrentPackage = await RNFS.readDir(currentPackageDir);
+      for (const item of itemsInCurrentPackage) {
+        const destPath = `${newPackagePath}/${item.name}`;
+        await RNFS.copyFile(item.path, destPath); // copyFile funciona para archivos y (en algunas versiones) para directorios
       }
+      console.log('[Flopy] Copia completada.');
 
       // 4. Aplica los cambios del manifiesto
       // 4a. Borra los archivos eliminados
+      console.log(
+        `[Flopy] Eliminando ${manifest.deletedFiles.length} archivos...`
+      );
       for (const fileToDelete of manifest.deletedFiles) {
         const fullPath = `${newPackagePath}/${fileToDelete}`;
         if (await RNFS.exists(fullPath)) {
@@ -197,46 +190,37 @@ class UpdateManager {
         }
       }
 
-      // 4b. Copia los archivos nuevos/binarios
+      // 4b. Copia los archivos nuevos/binarios que vienen en el parche
+      console.log(
+        `[Flopy] Añadiendo/reemplazando ${manifest.newFiles.length} archivos...`
+      );
       for (const fileToAdd of manifest.newFiles) {
         const sourcePath = `${patchTempDir}/${fileToAdd}`;
         const destPath = `${newPackagePath}/${fileToAdd}`;
         // Asegurarse de que el directorio padre exista
-        await RNFS.mkdir(destPath.substring(0, destPath.lastIndexOf('/')));
+        await RNFS.mkdir(destPath.substring(0, destPath.lastIndexOf('/')), {
+          NSURLIsExcludedFromBackupKey: true,
+        });
         await RNFS.copyFile(sourcePath, destPath);
       }
 
-      // 4c. Aplica los parches de texto
+      // --- 4c. APLICA LOS PARCHES DE TEXTO USANDO SOLO EL PUENTE NATIVO ---
+      console.log(
+        `[Flopy] Aplicando ${Object.keys(manifest.patchedFiles).length} parches de texto vía nativa...`
+      );
       for (const relativePath in manifest.patchedFiles) {
         const patchContent = manifest.patchedFiles[relativePath];
         const originalFilePath = `${newPackagePath}/${relativePath}`;
-        const originalContent = await RNFS.readFile(originalFilePath, 'utf8');
 
-        const newContent = jsdiff.applyPatch(originalContent, patchContent);
-        if (newContent === false) {
-          throw new Error(
-            `Fallo al aplicar el parche para el archivo: ${relativePath}`
-          );
-        }
-
-        await RNFS.writeFile(originalFilePath, newContent, 'utf8');
-
-        const bundleFilePath = `${newPackagePath}/index.android.bundle`;
-        const bundleExists = await RNFS.exists(bundleFilePath);
-        console.log(
-          `[Flopy JS DEBUG] ¿Existe el bundle después de aplicar el parche?: ${bundleExists} en ${bundleFilePath}`
-        );
-        if (!bundleExists) {
-          const dirContents = await RNFS.readDir(newPackagePath);
-          console.log(
-            `[Flopy JS DEBUG] Contenido de ${newPackagePath}:`,
-            JSON.stringify(dirContents.map((item) => item.name))
-          );
-        }
+        await NativeBridge.applyPatch(originalFilePath, patchContent);
       }
+      console.log('[Flopy] Parches de texto aplicados con éxito.');
     } finally {
       // 5. Limpia el directorio temporal del parche, pase lo que pase
-      await RNFS.unlink(patchTempDir);
+      if (await RNFS.exists(patchTempDir)) {
+        await RNFS.unlink(patchTempDir);
+        console.log('[Flopy] Directorio temporal del parche eliminado.');
+      }
     }
   }
 }

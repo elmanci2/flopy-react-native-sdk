@@ -1,9 +1,10 @@
 package com.remoteupdate
 
 import android.provider.Settings
-import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
+import com.github.difflib.DiffUtils
+import com.github.difflib.patch.Patch
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -21,11 +22,35 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
    * en modo debug o forzando la recreación de la actividad principal.
    */
   @ReactMethod
-  fun restartApp() {
-    // Implementación simple y segura que funciona en la mayoría de los casos
-    // y no depende de clases internas.
-    val activity = currentActivity ?: return
-    activity.runOnUiThread { activity.recreate() }
+  fun restartApp(reason: String? = null) {
+    try {
+      val context = reactContext
+
+      if (BuildConfig.DEBUG) {
+        // 🔹 En debug reinicia solo el contexto de React (rápido, como hot reload)
+        val instanceManager =
+                (context.currentActivity?.application as? ReactApplication)
+                        ?.reactNativeHost
+                        ?.reactInstanceManager
+
+        instanceManager?.let {
+          Handler(Looper.getMainLooper()).post {
+            try {
+              it.recreateReactContextInBackground()
+            } catch (t: Throwable) {
+              // fallback si falla → recrea la Activity
+              context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
+            }
+          }
+        }
+      } else {
+        // 🔹 En release reinicia el proceso completo (reinicio real)
+        com.jakewharton.processphoenix.ProcessPhoenix.triggerRebirth(context)
+      }
+    } catch (e: Exception) {
+      // fallback final si todo falla
+      context.currentActivity?.runOnUiThread { context.currentActivity?.recreate() }
+    }
   }
 
   override fun getConstants(): Map<String, Any> {
@@ -45,7 +70,6 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
       constants["clientUniqueId"] = androidId ?: ""
     } catch (e: Exception) {
-      Log.e(NAME, "Error retrieving constants", e)
       constants["flopyPath"] = ""
       constants["binaryVersion"] = ""
       constants["clientUniqueId"] = ""
@@ -125,40 +149,35 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
   }
 
   /**
-   * Lee el contenido del archivo de metadatos. Devuelve el contenido como string o null si no
-   * existe.
+   * Aplica un parche en formato "unified diff" a un archivo de texto.
+   * @param originalFilePath La ruta absoluta al archivo que será modificado.
+   * @param patchString El contenido del parche de texto generado por jsdiff.
+   * @param promise Resuelve a `true` si tiene éxito, rechaza si falla.
    */
   @ReactMethod
-  fun readMetadata(promise: Promise) {
+  fun applyPatch(originalFilePath: String, patchString: String, promise: Promise) {
     try {
-      val flopyDir = reactContext.filesDir.resolve("flopy")
-      val metadataFile = File(flopyDir, "flopy.json")
-      if (metadataFile.exists()) {
-        promise.resolve(metadataFile.readText())
-      } else {
-        promise.resolve(null)
+      val originalFile = File(originalFilePath)
+      if (!originalFile.exists()) {
+        promise.reject("APPLY_PATCH_ERROR", "El archivo original no existe: $originalFilePath")
+        return
       }
-    } catch (e: Exception) {
-      promise.reject("READ_METADATA_FAILED", e)
-    }
-  }
 
-  /**
-   * Escribe o actualiza el archivo de metadatos de forma atómica. El lado JS le pasa el contenido
-   * completo del JSON como un string.
-   */
-  @ReactMethod
-  fun writeMetadata(content: String, promise: Promise) {
-    try {
-      val flopyDir = reactContext.filesDir.resolve("flopy")
-      if (!flopyDir.exists()) {
-        flopyDir.mkdirs()
-      }
-      val metadataFile = File(flopyDir, "flopy.json")
-      metadataFile.writeText(content)
+      // 1. Lee el contenido del archivo original línea por línea
+      val originalLines = originalFile.readLines()
+
+      // 2. Parsea el string del parche
+      val patch: Patch<String> = DiffUtils.parseUnifiedDiff(patchString.lines())
+
+      // 3. Aplica el parche a las líneas originales
+      val resultLines: List<String> = DiffUtils.patch(originalLines, patch)
+
+      // 4. Escribe el nuevo contenido de vuelta al archivo original, sobrescribiéndolo
+      originalFile.writeText(resultLines.joinToString("\n"))
+
       promise.resolve(true)
     } catch (e: Exception) {
-      promise.reject("WRITE_METADATA_FAILED", e)
+      promise.reject("APPLY_PATCH_FAILED", "Ocurrió un error al aplicar el parche: ${e.message}", e)
     }
   }
 

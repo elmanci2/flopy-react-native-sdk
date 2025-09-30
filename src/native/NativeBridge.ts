@@ -18,6 +18,13 @@ interface INativeBridge {
    */
   unzip(zipPath: string, destinationPath: string): Promise<boolean>;
 
+  /**
+   * Aplica un parche a un archivo original usando lógica nativa.
+   * @param originalFilePath La ruta absoluta al archivo original.
+   * @param patchString El parche en formato string.
+   * @returns Una promesa que se resuelve si el parche es exitoso.
+   */
+  applyPatch(originalFilePath: string, patchString: string): Promise<boolean>;
   // --- Constantes ---
   getConstants(): {
     flopyPath: string;
