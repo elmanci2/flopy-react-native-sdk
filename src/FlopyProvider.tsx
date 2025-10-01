@@ -4,7 +4,7 @@ import React, { type ReactNode } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
-import NativeBridge from './native/NativeBridge'; // Asumiendo que has unificado tu puente nativo aquí
+import NativeBridge, { RNRestart } from './native/NativeBridge'; // Asumiendo que has unificado tu puente nativo aquí
 import type { FlopyOptions } from './types';
 import Flopy from './index';
 
@@ -64,25 +64,23 @@ class FlopyProvider extends React.Component<
       const state = stateRepository.getState();
       const options = stateRepository.getOptions();
 
-      // CAMBIO: Verifica firstTime en lugar de failedBootCount
       if (state.currentPackage) {
-        const isFirstTime = await NativeBridge.readState();
+        console.log('[Flopy] Marcando versión actual como exitosa...');
 
-        console.log(
-          '[Flopy] Primera carga con actualización, marcando como exitosa...'
-        );
+        // SIEMPRE marca como exitosa al cargar
         await NativeBridge.markSuccess();
 
+        // Si había fallos, reporta éxito
         if (state.failedBootCount > 0) {
           apiClient
             .reportStatus(options, state.currentPackage.releaseId, 'SUCCESS')
             .catch(console.error);
-
-          stateRepository.resetBootStatus();
         }
+
+        stateRepository.resetBootStatus();
       }
 
-      console.log('[Flopy] Iniciando sync en background...');
+      // Sync en background
       Flopy.sync().catch(console.error);
     } catch (e) {
       console.error('[Flopy] Error en background:', e);
@@ -91,6 +89,7 @@ class FlopyProvider extends React.Component<
   /**
    * Maneja los crashes de renderizado.
    */
+
   async componentDidCatch(
     error: Error,
     errorInfo: React.ErrorInfo
@@ -98,6 +97,7 @@ class FlopyProvider extends React.Component<
     console.error('[Flopy] Error de renderizado capturado:', error, errorInfo);
 
     const timeSinceAppStart = Date.now() - this.appStartTime;
+
     if (timeSinceAppStart <= CRASH_TIME_LIMIT_MS) {
       try {
         const state = stateRepository.getState();
@@ -113,14 +113,21 @@ class FlopyProvider extends React.Component<
             console.log(
               '[Flopy] Demasiados fallos. Reportando y revirtiendo...'
             );
-            await apiClient.reportStatus(
-              options,
-              state.currentPackage.releaseId,
-              'FAILURE'
-            );
+
+            // Reporta el fallo (fire-and-forget)
+            apiClient
+              .reportStatus(options, state.currentPackage.releaseId, 'FAILURE')
+              .catch((e) =>
+                console.error('[Flopy] Error reportando fallo:', e)
+              );
+
             this.setState({ isReverting: true });
             await stateRepository.revertToPreviousPackage();
-            NativeBridge.restartApp();
+            RNRestart.restart();
+          } else {
+            // Primer fallo, solo reinicia
+            console.log('[Flopy] Primer fallo detectado, reiniciando...');
+            RNRestart.restart();
           }
         }
       } catch (e) {

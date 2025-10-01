@@ -166,38 +166,6 @@ class Flopy(private val context: Context) {
 
   // ========== ESTADO PARA JS ==========
 
-  fun readState(): WritableMap? {
-    val currentVersion = sp.getString("currentVersion", null)
-
-    if (currentVersion == null) return null
-
-    val state = Arguments.createMap()
-
-    // Current package
-    val currentPackage = Arguments.createMap()
-    currentPackage.putString("releaseId", currentVersion)
-    currentPackage.putString("hash", sp.getString("currentHash", null))
-    currentPackage.putString("relativePath", "updates/$currentVersion/index.android.bundle")
-    state.putMap("currentPackage", currentPackage)
-
-    // Previous package (si existe)
-    val lastVersion = sp.getString("lastVersion", null)
-    if (lastVersion != null) {
-      val previousPackage = Arguments.createMap()
-      previousPackage.putString("releaseId", lastVersion)
-      previousPackage.putString("hash", sp.getString("lastHash", null))
-      previousPackage.putString("relativePath", "updates/$lastVersion/index.android.bundle")
-      state.putMap("previousPackage", previousPackage)
-    }
-
-    // Failed boot count (derivado de firstTime y firstTimeOk)
-    val failedBootCount =
-            if (sp.getBoolean("firstTime", false) && !sp.getBoolean("firstTimeOk", true)) 1 else 0
-    state.putInt("failedBootCount", failedBootCount)
-
-    return state
-  }
-
   fun saveState(stateMap: ReadableMap?) {
     if (stateMap == null) return
 
@@ -222,6 +190,21 @@ class Flopy(private val context: Context) {
         }
       }
 
+      // NUEVO: Pending update
+      if (stateMap.hasKey("pendingUpdate")) {
+        val pendingUpdate = stateMap.getMap("pendingUpdate")
+        if (pendingUpdate != null) {
+          editor.putString("pendingVersion", pendingUpdate.getString("releaseId"))
+          editor.putString("pendingHash", pendingUpdate.getString("hash"))
+          editor.putBoolean("pendingIsMandatory", pendingUpdate.getBoolean("isMandatory"))
+        }
+      } else {
+        // Limpia pending si no existe
+        editor.remove("pendingVersion")
+        editor.remove("pendingHash")
+        editor.remove("pendingIsMandatory")
+      }
+
       // Failed boot count
       val failedBootCount = stateMap.getInt("failedBootCount")
       editor.putBoolean("firstTime", failedBootCount > 0)
@@ -232,6 +215,49 @@ class Flopy(private val context: Context) {
     } catch (e: Exception) {
       Log.e("Flopy", "Error saving state", e)
     }
+  }
+
+  fun readState(): WritableMap? {
+    val currentVersion = sp.getString("currentVersion", null)
+
+    val state = Arguments.createMap()
+
+    // Current package
+    if (currentVersion != null) {
+      val currentPackage = Arguments.createMap()
+      currentPackage.putString("releaseId", currentVersion)
+      currentPackage.putString("hash", sp.getString("currentHash", null))
+      currentPackage.putString("relativePath", "updates/$currentVersion/index.android.bundle")
+      state.putMap("currentPackage", currentPackage)
+    }
+
+    // Previous package
+    val lastVersion = sp.getString("lastVersion", null)
+    if (lastVersion != null) {
+      val previousPackage = Arguments.createMap()
+      previousPackage.putString("releaseId", lastVersion)
+      previousPackage.putString("hash", sp.getString("lastHash", null))
+      previousPackage.putString("relativePath", "updates/$lastVersion/index.android.bundle")
+      state.putMap("previousPackage", previousPackage)
+    }
+
+    // NUEVO: Pending update
+    val pendingVersion = sp.getString("pendingVersion", null)
+    if (pendingVersion != null) {
+      val pendingUpdate = Arguments.createMap()
+      pendingUpdate.putString("releaseId", pendingVersion)
+      pendingUpdate.putString("hash", sp.getString("pendingHash", null))
+      pendingUpdate.putString("relativePath", "updates/$pendingVersion/index.android.bundle")
+      pendingUpdate.putBoolean("isMandatory", sp.getBoolean("pendingIsMandatory", false))
+      state.putMap("pendingUpdate", pendingUpdate)
+    }
+
+    // Failed boot count
+    val failedBootCount =
+            if (sp.getBoolean("firstTime", false) && !sp.getBoolean("firstTimeOk", true)) 1 else 0
+    state.putInt("failedBootCount", failedBootCount)
+
+    return if (state.toHashMap().isEmpty()) null else state
   }
 
   fun incrementFailedBootCount() {

@@ -1,7 +1,6 @@
 // src/Flopy.ts
 
 import { stateRepository } from './services/StateRepository';
-
 import { updateManager } from './services/UpdateManager';
 import NativeBridge, { RNRestart } from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
@@ -12,9 +11,6 @@ export { FlopyProvider } from './FlopyProvider';
 export { SyncStatus };
 
 class Flopy {
-  /**
-   * @internal - Orquesta toda la configuración del SDK. Solo debe ser llamado por el FlopyProvider.
-   */
   static async _internalConfigure(
     developerOptions: FlopyOptions
   ): Promise<void> {
@@ -55,10 +51,11 @@ class Flopy {
     let releaseId: string | null = null;
 
     try {
+      // PASO 1: Verifica si hay una actualización pendiente al inicio
       const pendingUpdate = stateRepository.getPendingUpdate();
       if (pendingUpdate) {
         console.log(
-          `[Flopy] Se encontró una actualización pendiente: ${pendingUpdate.hash}`
+          `[Flopy] Se encontró una actualización pendiente: ${pendingUpdate.releaseId}`
         );
         const mode = pendingUpdate.isMandatory
           ? mandatoryInstallMode
@@ -68,18 +65,18 @@ class Flopy {
           mode === InstallMode.IMMEDIATE ||
           mode === InstallMode.ON_NEXT_RESTART
         ) {
-          console.log(
-            '[Flopy] Aplicando actualización pendiente y reiniciando...'
-          );
+          console.log('[Flopy] Aplicando actualización pendiente...');
 
-          await stateRepository.recordNewPackage(pendingUpdate);
-
+          await stateRepository.switchToVersion(pendingUpdate);
           await stateRepository.clearPendingUpdate();
 
+          console.log('[Flopy] Actualización aplicada, reiniciando...');
           RNRestart.restart();
           return SyncStatus.UPDATE_INSTALLED;
         }
       }
+
+      // PASO 2: Chequea si hay nuevas actualizaciones en el servidor
       const stateOptions = stateRepository.getOptions();
       const currentPackage = stateRepository.getCurrentPackage();
       const response = await apiClient.checkForUpdate(
@@ -95,29 +92,30 @@ class Flopy {
 
       const newPackage = response.package;
       console.log(
-        `[Flopy] Actualización encontrada (releaseId: ${newPackage.releaseId}).`
+        `[Flopy] Actualización encontrada (releaseId: ${newPackage.releaseId}, mandatory: ${newPackage.isMandatory}).`
       );
 
       releaseId = response.package.releaseId;
 
+      // PASO 3: Descarga la actualización
       const newPackageInfo = await updateManager.downloadAndApply(newPackage);
 
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
         : installMode;
 
+      // PASO 4: Aplica según el modo de instalación
       if (finalInstallMode === InstallMode.IMMEDIATE) {
-        console.log('[Flopy] Instalando actualización inmediatamente...');
-        await stateRepository.recordNewPackage(newPackageInfo);
-
-        const finalState = stateRepository.getState();
         console.log(
-          '[Flopy JS DEBUG] Estado final antes del reinicio:',
-          JSON.stringify(finalState, null, 2)
+          '[Flopy] Instalando actualización mandatory inmediatamente...'
         );
-        // ------------------------------------
 
+        await stateRepository.switchToVersion(newPackageInfo);
+        // NO guardar como pendingUpdate si es mandatory e immediate
+
+        console.log('[Flopy] Actualización aplicada, reiniciando...');
         RNRestart.restart();
+        return SyncStatus.UPDATE_INSTALLED;
       } else {
         console.log(
           '[Flopy] Actualización descargada. Se instalará en el próximo reinicio.'
@@ -127,14 +125,8 @@ class Flopy {
           newPackage.isMandatory
         );
 
-        const finalState = stateRepository.getState();
-        console.log(
-          '[Flopy JS DEBUG] Estado final (pendiente) antes de salir:',
-          JSON.stringify(finalState, null, 2)
-        );
+        return SyncStatus.UPDATE_INSTALLED;
       }
-
-      return SyncStatus.UPDATE_INSTALLED;
     } catch (error: any) {
       console.error('[Flopy] Error durante sync:', error);
       if (releaseId) {

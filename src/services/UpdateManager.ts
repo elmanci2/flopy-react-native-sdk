@@ -1,7 +1,6 @@
 // src/services/UpdateManager.ts
 import RNFS from 'react-native-fs';
 import type { UpdatePackage } from '../types/api';
-
 import NativeBridge from '../native/NativeBridge';
 import type { PackageInfo } from '../types/sdk';
 import { hash } from 'react-native-fs';
@@ -20,25 +19,42 @@ class UpdateManager {
     this.flopyPath = constants.flopyPath;
     this.updatesPath = `${this.flopyPath}/updates`;
     await RNFS.mkdir(this.updatesPath);
+    console.log('[Flopy UM] Updates path:', this.updatesPath);
   }
 
   async downloadAndApply(updatePackage: UpdatePackage): Promise<PackageInfo> {
-    // Usa releaseId como nombre de carpeta (como pushy usa el hash/version)
     const newPackagePath = `${this.updatesPath}/${updatePackage.releaseId}`;
 
+    console.log('[Flopy UM] Verificando si existe:', newPackagePath);
+
     if (await RNFS.exists(newPackagePath)) {
-      console.log('[Flopy] La actualización ya existe en el disco.');
+      console.log('[Flopy UM] La actualización ya existe en el disco.');
+
+      // Verifica que el bundle exista
+      const bundlePath = `${newPackagePath}/index.android.bundle`;
+      const bundleExists = await RNFS.exists(bundlePath);
+      console.log('[Flopy UM] Bundle exists?', bundleExists, bundlePath);
+
+      if (!bundleExists) {
+        console.log('[Flopy UM] Bundle no existe, re-descargando...');
+        await RNFS.unlink(newPackagePath);
+        await this.downloadFullPackage(updatePackage, newPackagePath);
+      }
     } else {
-      console.log('[Flopy] Descargando paquete completo...');
+      console.log('[Flopy UM] Descargando paquete completo...');
       await this.downloadFullPackage(updatePackage, newPackagePath);
     }
 
     const newPackageInfo: PackageInfo = {
       hash: updatePackage.hash,
-      // ⚠️ CAMBIO: Usa releaseId en el path (no hash)
       relativePath: `updates/${updatePackage.releaseId}/index.android.bundle`,
       releaseId: updatePackage.releaseId,
     };
+
+    console.log(
+      '[Flopy UM] PackageInfo creado:',
+      JSON.stringify(newPackageInfo)
+    );
 
     return newPackageInfo;
   }
@@ -51,6 +67,9 @@ class UpdateManager {
     const tempPath = `${toPath}.tmp`;
 
     try {
+      console.log('[Flopy UM] Descargando de:', fromUrl);
+      console.log('[Flopy UM] Guardando en:', toPath);
+
       const { promise } = RNFS.downloadFile({
         fromUrl,
         toFile: tempPath,
@@ -58,8 +77,11 @@ class UpdateManager {
       });
 
       await promise;
+      console.log('[Flopy UM] Descarga completada');
 
       const actualHash = await hash(tempPath, 'sha256');
+      console.log('[Flopy UM] Hash esperado:', expectedHash);
+      console.log('[Flopy UM] Hash recibido:', actualHash);
 
       if (actualHash.toLowerCase() !== expectedHash.toLowerCase()) {
         throw new Error(
@@ -68,6 +90,7 @@ class UpdateManager {
       }
 
       await RNFS.moveFile(tempPath, toPath);
+      console.log('[Flopy UM] Archivo movido a destino final');
     } finally {
       if (await RNFS.exists(tempPath)) {
         await RNFS.unlink(tempPath);
@@ -87,55 +110,60 @@ class UpdateManager {
       updatePackage.hash
     );
 
+    console.log('[Flopy UM] Descomprimiendo:', zipPath, '→', newPackagePath);
     await NativeBridge.unzip(zipPath, newPackagePath);
+    console.log('[Flopy UM] Descompresión completada');
+
     await RNFS.unlink(zipPath);
 
     const bundleFilePath = `${newPackagePath}/index.android.bundle`;
     const bundleExists = await RNFS.exists(bundleFilePath);
 
+    console.log('[Flopy UM] Verificando bundle final:', bundleFilePath);
+    console.log('[Flopy UM] Bundle existe?', bundleExists);
+
     if (!bundleExists) {
       const dirContents = await RNFS.readDir(newPackagePath);
       console.log(
-        '[Flopy] Contenido del paquete:',
+        '[Flopy UM] Contenido del paquete:',
         JSON.stringify(dirContents.map((item) => item.name))
       );
       throw new Error('Bundle no encontrado después de descomprimir');
     }
 
-    console.log('[Flopy] Bundle descargado y verificado correctamente');
+    console.log('[Flopy UM] ✅ Bundle descargado y verificado correctamente');
   }
 
   async cleanupOldUpdates(): Promise<void> {
     const state = stateRepository.getState();
-
-    // ⚠️ CAMBIO: Usa releaseId en lugar de hash
     const activeReleases = [
       state.currentPackage?.releaseId,
       state.previousPackage?.releaseId,
     ].filter(Boolean) as string[];
 
-    console.log('[Flopy] Limpiando updates. Activos:', activeReleases);
+    console.log('[Flopy UM] Limpiando updates. Activos:', activeReleases);
 
     try {
       const updateDirs = await RNFS.readDir(this.updatesPath);
 
       for (const dir of updateDirs) {
         if (dir.isDirectory() && !activeReleases.includes(dir.name)) {
-          console.log('[Flopy] Eliminando update antiguo:', dir.name);
+          console.log('[Flopy UM] Eliminando update antiguo:', dir.name);
           await RNFS.unlink(dir.path);
         }
       }
 
-      console.log('[Flopy] Limpieza completada');
+      console.log('[Flopy UM] Limpieza completada');
     } catch (e) {
-      console.error('[Flopy] Error durante limpieza:', e);
+      console.error('[Flopy UM] Error durante limpieza:', e);
     }
   }
 
-  // NUEVO: Verifica si un bundle existe
   async verifyBundle(releaseId: string): Promise<boolean> {
     const bundlePath = `${this.updatesPath}/${releaseId}/index.android.bundle`;
-    return await RNFS.exists(bundlePath);
+    const exists = await RNFS.exists(bundlePath);
+    console.log('[Flopy UM] verifyBundle:', releaseId, '→', exists);
+    return exists;
   }
 }
 

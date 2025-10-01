@@ -14,13 +14,22 @@ class StateRepository {
   async switchToVersion(packageInfo: PackageInfo): Promise<void> {
     this.ensureInitialized();
 
-    // Opción 1: Usar el método optimizado (más rápido)
+    console.log(
+      '[Flopy SR] switchToVersion llamado con:',
+      JSON.stringify(packageInfo)
+    );
+
+    // Usa el método optimizado
     await NativeBridge.switchVersion(packageInfo.releaseId, packageInfo.hash);
+
+    console.log('[Flopy SR] switchVersion nativo completado');
 
     // Actualiza el estado local
     this.state!.previousPackage = this.state!.currentPackage;
     this.state!.currentPackage = packageInfo;
     this.state!.failedBootCount = 0;
+
+    console.log('[Flopy SR] Estado local actualizado');
   }
 
   async markUpdateSuccess(): Promise<void> {
@@ -44,6 +53,11 @@ class StateRepository {
     };
 
     const persistedState = await NativeBridge.readState();
+    console.log(
+      '[Flopy SR] Estado leído desde nativo:',
+      JSON.stringify(persistedState, null, 2)
+    );
+
     if (persistedState) {
       this.state = persistedState;
     } else {
@@ -56,7 +70,10 @@ class StateRepository {
     }
 
     this.isInitialized = true;
-    console.log('[Flopy SR] Repositorio de estado inicializado desde nativo.');
+    console.log(
+      '[Flopy SR] Repositorio inicializado. Estado final:',
+      JSON.stringify(this.state, null, 2)
+    );
   }
 
   async recordNewPackage(packageInfo: PackageInfo): Promise<void> {
