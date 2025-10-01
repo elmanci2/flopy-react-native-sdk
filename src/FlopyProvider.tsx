@@ -114,7 +114,6 @@ class FlopyProvider extends React.Component<
               '[Flopy] Demasiados fallos. Reportando y revirtiendo...'
             );
 
-            // Reporta el fallo (fire-and-forget)
             apiClient
               .reportStatus(options, state.currentPackage.releaseId, 'FAILURE')
               .catch((e) =>
@@ -125,7 +124,6 @@ class FlopyProvider extends React.Component<
             await stateRepository.revertToPreviousPackage();
             RNRestart.restart();
           } else {
-            // Primer fallo, solo reinicia
             console.log('[Flopy] Primer fallo detectado, reiniciando...');
             RNRestart.restart();
           }

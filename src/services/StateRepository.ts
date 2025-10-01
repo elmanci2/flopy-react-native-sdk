@@ -46,6 +46,7 @@ class StateRepository {
       serverUrl: developerOptions.serverUrl,
       appId: developerOptions.appId,
       channel: developerOptions.channel,
+      deploymentKey: developerOptions.deploymentKey,
       binaryVersion:
         developerOptions.binaryVersion || nativeConstants.binaryVersion,
       clientUniqueId:

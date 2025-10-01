@@ -20,6 +20,7 @@ class Flopy {
       serverUrl: developerOptions.serverUrl,
       appId: developerOptions.appId,
       channel: developerOptions.channel,
+      deploymentKey: developerOptions.deploymentKey,
       binaryVersion:
         developerOptions.binaryVersion || nativeConstants.binaryVersion,
       clientUniqueId:
@@ -36,7 +37,7 @@ class Flopy {
       );
     }
 
-    apiClient.configure(finalOptions.serverUrl);
+    apiClient.configure(finalOptions.serverUrl, finalOptions.deploymentKey);
     await stateRepository.initialize(finalOptions);
 
     console.log('[Flopy] SDK configurado e inicializado con éxito.');
@@ -111,8 +112,6 @@ class Flopy {
         );
 
         await stateRepository.switchToVersion(newPackageInfo);
-        // NO guardar como pendingUpdate si es mandatory e immediate
-
         console.log('[Flopy] Actualización aplicada, reiniciando...');
         RNRestart.restart();
         return SyncStatus.UPDATE_INSTALLED;

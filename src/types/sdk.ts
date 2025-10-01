@@ -4,7 +4,7 @@ export interface FlopyOptions {
   serverUrl: string;
   appId: string;
   channel: string;
-
+  deploymentKey: string;
   binaryVersion?: string;
   clientUniqueId?: string;
 }

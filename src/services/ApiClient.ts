@@ -14,8 +14,9 @@ class ApiClient {
     });
   }
 
-  configure(serverUrl: string): void {
+  configure(serverUrl: string, deploymentKey: string): void {
     this.client.defaults.baseURL = serverUrl;
+    this.client.defaults.headers.common['X-Deployment-Key'] = deploymentKey;
     this.isConfigured = true;
   }
 
