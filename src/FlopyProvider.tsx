@@ -1,10 +1,10 @@
 // src/FlopyProvider.tsx
 
 import React, { type ReactNode } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
-import NativeBridge, { RNRestart } from './native/NativeBridge'; // Asumiendo que has unificado tu puente nativo aquí
+import NativeBridge, { RNRestart } from './native/NativeBridge';
 import type { FlopyOptions } from './types';
 import Flopy from './index';
 
@@ -138,13 +138,7 @@ class FlopyProvider extends React.Component<
 
   render() {
     if (!this.state.isInitialized) {
-      return (
-        this.props.fallback || (
-          <View style={styles.container}>
-            <ActivityIndicator size="large" />
-          </View>
-        )
-      );
+      return this.props.fallback || <View style={styles.container} />;
     }
 
     if (this.state.hasError && this.state.isReverting) {
