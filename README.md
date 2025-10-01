@@ -1,308 +1,559 @@
-# react-native-remote-update
+Flopy React Native SDK
+Sistema de actualizaciones OTA (Over-The-Air) para aplicaciones React Native con soporte para rollback automático y gestión de versiones.
 
-## What is this?
+Características
 
-`react-native-remote-update` is a module for React Native that allows you to update your application remotely. It uses a JSON file to store the application's version and the commit hash of the latest version. When the app starts, it checks if there is an available update and downloads the new version if there is one.
+Actualizaciones OTA: Descarga y aplica actualizaciones sin pasar por las tiendas de aplicaciones
+Rollback automático: Detecta crashes y revierte automáticamente a la versión anterior
+Actualizaciones mandatory: Fuerza actualizaciones críticas inmediatamente
+Gestión de canales: Separa entornos (Production, Staging, Development)
+Seguridad por deployment key: Valida permisos específicos por canal
+Limpieza automática: Elimina versiones antiguas para optimizar espacio
+Arquitectura nueva de React Native: Compatible con Fabric y TurboModules
 
-## Installation 📦
 
-Install the module using one of the following commands:
-
-```sh
-npm install react-native-remote-update
-```
-
-```sh
-yarn add react-native-remote-update
-```
-
-```sh
-bun add react-native-remote-update
-```
-
-Direct to your Android project at the path `android/app/src/main/java/com/yourapp/MainActivity.java`.
-Import this line:
-
-```kotlin
-    import com.remoteupdate.BundleFileManager
-```
-
-add this fragment of code to the reactNativeHost block
-
-```kotlin
-override fun getJSBundleFile(): String? {
-                return BundleFileManager.getJSBundleFile(applicationContext)
- }
-```
-
-your archvo should look like this
-
-```kotlin
-package com.remote
-
-import android.app.Application
-import com.facebook.react.PackageList
-import com.facebook.react.ReactApplication
-import com.facebook.react.ReactHost
-import com.facebook.react.ReactNativeHost
-import com.facebook.react.ReactPackage
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
-import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.soloader.SoLoader
-import java.io.File
-import com.remoteupdate.BundleFileManager // <-- 👈 Import the BundleFileManager module
+Instalación
+bashnpm install flopy-react-native
+# o
+yarn add flopy-react-native
+Dependencias peer
+bashnpm install react-native-fs react-native-restart
+Configuración Android
+En android/app/src/main/java/com/tuapp/MainApplication.kt:
+kotlinimport com.remoteupdate.Flopy
 
 class MainApplication : Application(), ReactApplication {
-
     override val reactNativeHost: ReactNativeHost =
         object : DefaultReactNativeHost(this) {
-            override fun getPackages(): List<ReactPackage> =
-                PackageList(this).packages.apply {
-                    // Packages that cannot be autolinked yet can be added manually here
+            // ... configuración existente ...
 
-                }
-
-            override fun getJSMainModuleName(): String = "index"
-
-            override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
-
-            override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
-            override val isHermesEnabled: Boolean = BuildConfig.IS_HERMES_ENABLED
-        //================== add this =================
             override fun getJSBundleFile(): String? {
-                return BundleFileManager.getJSBundleFile(applicationContext)
+                return Flopy.getInstance(applicationContext).getJSBundleFile()
             }
-        //===============================
         }
-
-    override val reactHost: ReactHost
-        get() = getDefaultReactHost(applicationContext, reactNativeHost)
-
-    override fun onCreate() {
-        super.onCreate()
-        SoLoader.init(this, false)
-        if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-            // Load the native entry point for this app if the new architecture is enabled
-            load()
-        }
-    }
 }
-```
 
-**¡Atención!** La función de actualizaciones remotas actualmente no está disponible en iOS. Estamos trabajando en implementarla y te informaremos tan pronto como esté lista. Gracias por tu comprensión.
+Uso básico
+1. Envuelve tu app con FlopyProvider
+typescriptimport { FlopyProvider } from 'flopy-react-native';
 
-## Uso
-
-Here is an example of a test server [test server](https://github.com/elmanci2/react-native-remote-update-server-test)
-
-To use the `react-native-remote-update` module, follow these steps:
-
-1. **Import the module** in your application:
-
-   ```javascript
-   import {
-     RemoteUpdate,
-     RemoteUpdateProvider,
-   } from 'react-native-remote-update';
-   ```
-
-# ⚠ IMPORTANT WARNING ⚠
-
-Download links **MUST BE DIRECT** and must not return a JSON response.
-
-1. **Configure the update URL** that returns the JSON with the version information:
-
-   ```javascript
-   const uri = 'https://your-server.com/update.json';
-   ```
-
-2. **Call the `RemoteUpdate` function inside a `useEffect` hook to check for updates when your application starts:**
-
-```javascript
-useEffect(() => {
-  RemoteUpdate({ uri }, (error, success) => {
-    if (error) {
-      console.error('Error al actualizar:', error);
-    } else {
-      console.log('Actualización exitosa:', success);
-    }
-  });
-}, []);
-```
-
-3. **Wrap your application** in the `RemoteUpdateProvider` component. This component handles the update state and captures errors. If an error prevents the application from starting, the `RemoteUpdateProvider` component will display an error or update component as desired. This also provides the opportunity to send a new version and delete bundles that cause this error system:
-
-```javascript
-const App = () => {
+function App() {
   return (
-    <RemoteUpdateProvider
-      fallback={<Text>Error reverting to previous version, etc...</Text>} // <-- 👈 Fallback component to display if an error occurs in the app when updating the new version
-      dev={!__DEV__}
-    >
-      <YourMainComponent />
-    </RemoteUpdateProvider>
-  );
-};
-
-export default App;
-```
-
-### Example Usage
-
-Here is an example of how to implement `react-native-remote-update` in your application:
-
-```javascript
-import React, { useEffect } from 'react';
-import { Text, ToastAndroid, View } from 'react-native';
-import { RemoteUpdate, RemoteUpdateProvider } from 'react-native-remote-update';
-
-const uri = 'https://your-server.com/update'; // <-- 👈 URL de actualización directa para descargar el archivo JSON
-
-const MainComponent = () => {
-  return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'pink',
+    <FlopyProvider
+      options={{
+        serverUrl: 'https://api.tuservidor.com',
+        appId: 'tu-app-id',
+        channel: 'Production',
+        deploymentKey: 'tu-deployment-key-production',
       }}
     >
-      <Text
-        style={{
-          fontSize: 30,
-          textAlign: 'center',
-          color: 'white',
-          fontWeight: 'bold',
-        }}
-      >
-        ¡Hola Mundo!
-      </Text>
-    </View>
+      <TuApp />
+    </FlopyProvider>
   );
-};
+}
+2. Sincroniza actualizaciones
+typescriptimport Flopy, { SyncStatus } from 'flopy-react-native';
 
-const App = () => {
-  // ==== this implementation will automatically update when the app starts and if there is a change, the changes will be reflected when the app is restarted ====
+async function checkForUpdates() {
+  const status = await Flopy.sync();
 
-  useEffect(() => {
-    RemoteUpdate({ uri }, (error, success) => {
-      if (error) {
-        console.error(error);
-        ToastAndroid.show('Error en la actualización', ToastAndroid.SHORT);
-      } else {
-        console.log(success);
-        ToastAndroid.show('Actualización completa', ToastAndroid.SHORT);
-      }
-    });
-  }, []);
-
-  return (
-    <RemoteUpdateProvider // <-- 👈 this is not mandatory but it is recommended
-      fallback={<Text>Error Regresando a una version anterior etc...</Text>} // <-- 👈 Fallback component to display if an error occurs in the app when updating the new version
-      dev={!__DEV__} // <-- 👈 Enable development mode to view the fallback component
-    >
-      <MainComponent />
-    </RemoteUpdateProvider>
-  );
-};
-
-export default App;
-```
-
-# ⚠ WARNING ⚠
-
-this dosn't work in development to test your implementation you need to generate an apk and test it there
-
-```sh
-cd android
-```
-
-and run this command
-
-```sh
-./gradlew assembleRelease
-```
-
-this will leave an apk in the android/app/build/outputs/apk/release path
-the file is called app-release.apk
-
-## creation of bundle file
-
-# ⚠ WARNING ⚠
-
-modify everything you want in your app at the javascript level you can install new packages that are only javascript and don't act if you install packages that require native code because that code is not compiled into the bundle only javascript
-
-go to your project native folder in a console and run this command
-
-```sh
-npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output ./dist/index.bundle --assets-dest ./assets/
-```
-
-this will create a bundle in the dist folder `./dist/index.bundle`
-
-```json
- "bundle": {
-    "uri": "https://your-server.com/bundle" // <-- 👈 URL to download the bundle directly
-  }
-```
-
-# ⚠ warning ⚠
-
-Do not update the app if you have used non-native code. You can only modify the JSON in the app. If you install or configure packages that overwrite native functions, these changes will not work in the app that is already published. You will need to generate a new file and publish it as you would normally do. However, if you only modified the JavaScript or installed packages that are purely JavaScript, the update will work perfectly.
-
-## JSON structure
-
-This should be a downloadable JSON file. Here is an example of the structure of the JSON that should be returned by your server:
-\_\_
-json example:
-
-```json
-{
-  "version": "1.0.0", // <-- 👈 version number
-  "versionCode": 4, // <-- 👈 version code of the app this is exlusive to make the app increment this every update begins at 0
-  "commit": "4444", // <-- 👈  hash of the last version
-  "fallback": true, // <-- 👈 allow the system to automatically fallback
-  "fallbackDetails": {
-    "commit": "3333", // <-- 👈 hash of the last version or the hash of the version specified that should be returned
-    "enable": false // <-- 👈 activate or deactivate the fallback
-  },
-  "bundle": {
-    "uri": "https://your-server.com/bundle" // <-- 👈 URL to download the bundle directly
+  if (status === SyncStatus.UPDATE_INSTALLED) {
+    console.log('Actualización aplicada');
   }
 }
-```
 
-### Explanation of JSON fields
+API
+FlopyProvider
+Componente que inicializa el SDK y maneja errores de renderizado.
+Props:
+typescriptinterface FlopyProviderProps {
+  children: ReactNode;
+  options: FlopyOptions;
+  fallback?: ReactNode; // Componente mostrado durante inicialización
+}
+FlopyOptions
+typescriptinterface FlopyOptions {
+  serverUrl: string;          // URL del servidor de actualizaciones
+  appId: string;              // ID de la aplicación
+  channel: string;            // Canal (Production, Staging, etc.)
+  deploymentKey: string;      // Clave de despliegue del canal
+  binaryVersion?: string;     // Versión del binario (auto-detectada)
+  clientUniqueId?: string;    // ID único del dispositivo (auto-detectado)
+}
+Flopy.sync()
+Chequea y aplica actualizaciones disponibles.
+typescriptFlopy.sync(options?: SyncOptions): Promise<SyncStatus>
+Opciones:
+typescriptinterface SyncOptions {
+  installMode?: InstallMode;          // Cuándo instalar updates normales
+  mandatoryInstallMode?: InstallMode; // Cuándo instalar updates mandatory
+}
 
-| Field             | Type    | Description                                           |
-| ----------------- | ------- | ----------------------------------------------------- |
-| `version`         | string  | The version number of the application                 |
-| `versionCode`     | number  | The version code used for the application's update.   |
-| `commit`          | string  | The hash of the commit for the latest version.        |
-| `fallback`        | boolean | Indicates if a fallback is available.                 |
-| `fallbackDetails` | object  | Contains details about the fallback version.          |
-| `bundle`          | object  | Contains information about the bundle for the update. |
-| `uri`             | string  | URL to download the bundle file.                      |
+enum InstallMode {
+  IMMEDIATE = 'IMMEDIATE',           // Reinicia inmediatamente
+  ON_NEXT_RESTART = 'ON_NEXT_RESTART' // Aplica en próximo reinicio
+}
+Respuestas:
+typescriptenum SyncStatus {
+  UP_TO_DATE = 'UP_TO_DATE',         // Sin actualizaciones
+  UPDATE_INSTALLED = 'UPDATE_INSTALLED', // Actualización descargada/instalada
+  ERROR = 'ERROR'                     // Error durante sync
+}
+Ejemplo:
+typescriptimport Flopy, { InstallMode } from 'flopy-react-native';
 
-## Methods and Parameters
+// Updates normales esperan al próximo reinicio
+// Updates mandatory se aplican inmediatamente
+const status = await Flopy.sync({
+  installMode: InstallMode.ON_NEXT_RESTART,
+  mandatoryInstallMode: InstallMode.IMMEDIATE,
+});
+Flopy.rollback()
+Revierte manualmente a la versión anterior.
+typescriptFlopy.rollback(): Promise<void>
+Ejemplo:
+typescriptawait Flopy.rollback(); // Reinicia con la versión anterior
+Flopy.getUpdateMetadata()
+Obtiene información de la actualización actual.
+typescriptFlopy.getUpdateMetadata(): Promise<PackageInfo | undefined>
 
-| Method             | Parameters                                            | Description                                                      |
-| ------------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
-| `RemoteUpdate`     | `{ uri: string, callback?: (error, result) => void }` | Initiates a remote update check.                                 |
-| `getCurrentJson`   | `callback: (error, result) => void`                   | Retrieves the current JSON configuration from the remote source. |
-| `getBackupBundles` | `callback: (error, result) => void`                   | Retrieves the backup bundles if available.                       |
-| `getCurrentBundle` | `callback: (error, result) => void`                   | Gets information about the current bundle.                       |
-|                    |
+interface PackageInfo {
+  releaseId: string;
+  hash: string;
+  relativePath: string;
+}
 
-## Tips and Warnings
+Flujos de actualización
+Actualización normal (no mandatory)
 
-- Ensure that your server is properly configured to host the JSON file and the bundle.
-- Use HTTPS for secure communications when retrieving updates.
-- Remember to thoroughly test the integration on both platforms, Android and iOS.
-- Keep in mind that iOS integration for remote updates will be available soon and may currently be unavailable.
+Usuario abre la app
+Flopy.sync() descarga la actualización
+Actualización queda pendiente
+Usuario cierra y reabre la app
+Actualización se aplica automáticamente
+App carga con la nueva versión
 
-## Contributing
+Actualización mandatory
 
-Check the [contribution guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+Usuario abre la app
+Flopy.sync() detecta actualización mandatory
+Descarga inmediatamente
+Aplica y reinicia automáticamente
+App carga con la nueva versión
+
+Rollback automático ante crash
+
+Actualización se aplica
+App crashea durante los primeros 5 segundos
+Sistema detecta el fallo
+Revierte automáticamente a la versión anterior
+App carga con la versión estable
+Se reporta el fallo al servidor
+
+
+Gestión de canales
+Flopy soporta múltiples canales para separar entornos:
+typescript// Production
+<FlopyProvider
+  options={{
+    serverUrl: 'https://api.tuservidor.com',
+    appId: 'tu-app-id',
+    channel: 'Production',
+    deploymentKey: 'production-key-xyz',
+  }}
+/>
+
+// Staging
+<FlopyProvider
+  options={{
+    serverUrl: 'https://api.tuservidor.com',
+    appId: 'tu-app-id',
+    channel: 'Staging',
+    deploymentKey: 'staging-key-abc',
+  }}
+/>
+Deployment Keys:
+Cada canal tiene su propio deployment key que valida:
+
+Permisos para ese canal específico
+Pertenencia a la aplicación correcta
+Previene actualizaciones accidentales entre canales
+
+
+Sistema de rollback
+Protección automática en 3 capas
+1. Detección de crash al inicio
+Si la app crashea en los primeros 5 segundos, se considera un fallo crítico.
+2. Rollback automático en Kotlin
+Al reiniciar, el sistema nativo detecta que la versión no fue marcada como exitosa y revierte automáticamente.
+3. Contador de fallos
+Si el rollback también falla, después de 2 intentos revierte a la versión base (assets).
+Versiones en disco
+El sistema mantiene máximo 2 versiones:
+
+currentPackage: Versión actual en uso
+previousPackage: Versión anterior (respaldo)
+
+Las versiones antiguas se eliminan automáticamente al marcar una actualización como exitosa.
+
+Ejemplo completo
+typescriptimport React, { useEffect } from 'react';
+import { View, Text, Button } from 'react-native';
+import { FlopyProvider } from 'flopy-react-native';
+import Flopy, { SyncStatus, InstallMode } from 'flopy-react-native';
+
+function MainApp() {
+  useEffect(() => {
+    // Chequea actualizaciones al montar
+    checkForUpdates();
+  }, []);
+
+  const checkForUpdates = async () => {
+    try {
+      const status = await Flopy.sync({
+        installMode: InstallMode.ON_NEXT_RESTART,
+        mandatoryInstallMode: InstallMode.IMMEDIATE,
+      });
+
+      if (status === SyncStatus.UPDATE_INSTALLED) {
+        console.log('Actualización lista. Reinicia la app para aplicarla.');
+      } else if (status === SyncStatus.UP_TO_DATE) {
+        console.log('App actualizada');
+      }
+    } catch (error) {
+      console.error('Error chequeando actualizaciones:', error);
+    }
+  };
+
+  const handleRollback = async () => {
+    await Flopy.rollback();
+  };
+
+  return (
+    <View>
+      <Text>Mi App con Flopy</Text>
+      <Button title="Buscar actualizaciones" onPress={checkForUpdates} />
+      <Button title="Revertir actualización" onPress={handleRollback} />
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <FlopyProvider
+      options={{
+        serverUrl: 'https://updates.miapp.com',
+        appId: 'mi-app-id',
+        channel: 'Production',
+        deploymentKey: 'prod-key-12345',
+      }}
+    >
+      <MainApp />
+    </FlopyProvider>
+  );
+}
+
+Troubleshooting
+La actualización no se aplica
+
+Verifica que el deploymentKey sea correcto para el canal
+Revisa los logs de Logcat: adb logcat | grep Flopy
+Confirma que el bundle existe: /data/data/com.tuapp/files/flopy/updates/
+
+Bucle de reinicios
+El sistema detecta crashes y revierte automáticamente. Si hay bucle infinito:
+
+Desinstala y reinstala la app
+Revisa los logs del servidor para ver qué actualización está causando el problema
+
+Pantalla en blanco al cargar
+Si la app queda en blanco >5 segundos:
+
+El bundle puede ser muy grande (optimiza con Hermes)
+Verifica que getJSBundleFile() esté configurado en MainApplication
+
+
+Licencia
+MIT
+
+Soporte
+Para reportar bugs o solicitar features, abre un issue en el repositorio.Flopy React Native SDK
+Sistema de actualizaciones OTA (Over-The-Air) para aplicaciones React Native con soporte para rollback automático y gestión de versiones.
+
+Características
+
+Actualizaciones OTA: Descarga y aplica actualizaciones sin pasar por las tiendas de aplicaciones
+Rollback automático: Detecta crashes y revierte automáticamente a la versión anterior
+Actualizaciones mandatory: Fuerza actualizaciones críticas inmediatamente
+Gestión de canales: Separa entornos (Production, Staging, Development)
+Seguridad por deployment key: Valida permisos específicos por canal
+Limpieza automática: Elimina versiones antiguas para optimizar espacio
+Arquitectura nueva de React Native: Compatible con Fabric y TurboModules
+
+
+Instalación
+bashnpm install flopy-react-native
+# o
+yarn add flopy-react-native
+Dependencias peer
+bashnpm install react-native-fs react-native-restart
+Configuración Android
+En android/app/src/main/java/com/tuapp/MainApplication.kt:
+kotlinimport com.remoteupdate.Flopy
+
+class MainApplication : Application(), ReactApplication {
+    override val reactNativeHost: ReactNativeHost =
+        object : DefaultReactNativeHost(this) {
+            // ... configuración existente ...
+
+            override fun getJSBundleFile(): String? {
+                return Flopy.getInstance(applicationContext).getJSBundleFile()
+            }
+        }
+}
+
+Uso básico
+1. Envuelve tu app con FlopyProvider
+typescriptimport { FlopyProvider } from 'flopy-react-native';
+
+function App() {
+  return (
+    <FlopyProvider
+      options={{
+        serverUrl: 'https://api.tuservidor.com',
+        appId: 'tu-app-id',
+        channel: 'Production',
+        deploymentKey: 'tu-deployment-key-production',
+      }}
+    >
+      <TuApp />
+    </FlopyProvider>
+  );
+}
+2. Sincroniza actualizaciones
+typescriptimport Flopy, { SyncStatus } from 'flopy-react-native';
+
+async function checkForUpdates() {
+  const status = await Flopy.sync();
+
+  if (status === SyncStatus.UPDATE_INSTALLED) {
+    console.log('Actualización aplicada');
+  }
+}
+
+API
+FlopyProvider
+Componente que inicializa el SDK y maneja errores de renderizado.
+Props:
+typescriptinterface FlopyProviderProps {
+  children: ReactNode;
+  options: FlopyOptions;
+  fallback?: ReactNode; // Componente mostrado durante inicialización
+}
+FlopyOptions
+typescriptinterface FlopyOptions {
+  serverUrl: string;          // URL del servidor de actualizaciones
+  appId: string;              // ID de la aplicación
+  channel: string;            // Canal (Production, Staging, etc.)
+  deploymentKey: string;      // Clave de despliegue del canal
+  binaryVersion?: string;     // Versión del binario (auto-detectada)
+  clientUniqueId?: string;    // ID único del dispositivo (auto-detectado)
+}
+Flopy.sync()
+Chequea y aplica actualizaciones disponibles.
+typescriptFlopy.sync(options?: SyncOptions): Promise<SyncStatus>
+Opciones:
+typescriptinterface SyncOptions {
+  installMode?: InstallMode;          // Cuándo instalar updates normales
+  mandatoryInstallMode?: InstallMode; // Cuándo instalar updates mandatory
+}
+
+enum InstallMode {
+  IMMEDIATE = 'IMMEDIATE',           // Reinicia inmediatamente
+  ON_NEXT_RESTART = 'ON_NEXT_RESTART' // Aplica en próximo reinicio
+}
+Respuestas:
+typescriptenum SyncStatus {
+  UP_TO_DATE = 'UP_TO_DATE',         // Sin actualizaciones
+  UPDATE_INSTALLED = 'UPDATE_INSTALLED', // Actualización descargada/instalada
+  ERROR = 'ERROR'                     // Error durante sync
+}
+Ejemplo:
+typescriptimport Flopy, { InstallMode } from 'flopy-react-native';
+
+// Updates normales esperan al próximo reinicio
+// Updates mandatory se aplican inmediatamente
+const status = await Flopy.sync({
+  installMode: InstallMode.ON_NEXT_RESTART,
+  mandatoryInstallMode: InstallMode.IMMEDIATE,
+});
+Flopy.rollback()
+Revierte manualmente a la versión anterior.
+typescriptFlopy.rollback(): Promise<void>
+Ejemplo:
+typescriptawait Flopy.rollback(); // Reinicia con la versión anterior
+Flopy.getUpdateMetadata()
+Obtiene información de la actualización actual.
+typescriptFlopy.getUpdateMetadata(): Promise<PackageInfo | undefined>
+
+interface PackageInfo {
+  releaseId: string;
+  hash: string;
+  relativePath: string;
+}
+
+Flujos de actualización
+Actualización normal (no mandatory)
+
+Usuario abre la app
+Flopy.sync() descarga la actualización
+Actualización queda pendiente
+Usuario cierra y reabre la app
+Actualización se aplica automáticamente
+App carga con la nueva versión
+
+Actualización mandatory
+
+Usuario abre la app
+Flopy.sync() detecta actualización mandatory
+Descarga inmediatamente
+Aplica y reinicia automáticamente
+App carga con la nueva versión
+
+Rollback automático ante crash
+
+Actualización se aplica
+App crashea durante los primeros 5 segundos
+Sistema detecta el fallo
+Revierte automáticamente a la versión anterior
+App carga con la versión estable
+Se reporta el fallo al servidor
+
+
+Gestión de canales
+Flopy soporta múltiples canales para separar entornos:
+typescript// Production
+<FlopyProvider
+  options={{
+    serverUrl: 'https://api.tuservidor.com',
+    appId: 'tu-app-id',
+    channel: 'Production',
+    deploymentKey: 'production-key-xyz',
+  }}
+/>
+
+// Staging
+<FlopyProvider
+  options={{
+    serverUrl: 'https://api.tuservidor.com',
+    appId: 'tu-app-id',
+    channel: 'Staging',
+    deploymentKey: 'staging-key-abc',
+  }}
+/>
+Deployment Keys:
+Cada canal tiene su propio deployment key que valida:
+
+Permisos para ese canal específico
+Pertenencia a la aplicación correcta
+Previene actualizaciones accidentales entre canales
+
+
+Sistema de rollback
+Protección automática en 3 capas
+1. Detección de crash al inicio
+Si la app crashea en los primeros 5 segundos, se considera un fallo crítico.
+2. Rollback automático en Kotlin
+Al reiniciar, el sistema nativo detecta que la versión no fue marcada como exitosa y revierte automáticamente.
+3. Contador de fallos
+Si el rollback también falla, después de 2 intentos revierte a la versión base (assets).
+Versiones en disco
+El sistema mantiene máximo 2 versiones:
+
+currentPackage: Versión actual en uso
+previousPackage: Versión anterior (respaldo)
+
+Las versiones antiguas se eliminan automáticamente al marcar una actualización como exitosa.
+
+Ejemplo completo
+typescriptimport React, { useEffect } from 'react';
+import { View, Text, Button } from 'react-native';
+import { FlopyProvider } from 'flopy-react-native';
+import Flopy, { SyncStatus, InstallMode } from 'flopy-react-native';
+
+function MainApp() {
+  useEffect(() => {
+    // Chequea actualizaciones al montar
+    checkForUpdates();
+  }, []);
+
+  const checkForUpdates = async () => {
+    try {
+      const status = await Flopy.sync({
+        installMode: InstallMode.ON_NEXT_RESTART,
+        mandatoryInstallMode: InstallMode.IMMEDIATE,
+      });
+
+      if (status === SyncStatus.UPDATE_INSTALLED) {
+        console.log('Actualización lista. Reinicia la app para aplicarla.');
+      } else if (status === SyncStatus.UP_TO_DATE) {
+        console.log('App actualizada');
+      }
+    } catch (error) {
+      console.error('Error chequeando actualizaciones:', error);
+    }
+  };
+
+  const handleRollback = async () => {
+    await Flopy.rollback();
+  };
+
+  return (
+    <View>
+      <Text>Mi App con Flopy</Text>
+      <Button title="Buscar actualizaciones" onPress={checkForUpdates} />
+      <Button title="Revertir actualización" onPress={handleRollback} />
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <FlopyProvider
+      options={{
+        serverUrl: 'https://updates.miapp.com',
+        appId: 'mi-app-id',
+        channel: 'Production',
+        deploymentKey: 'prod-key-12345',
+      }}
+    >
+      <MainApp />
+    </FlopyProvider>
+  );
+}
+
+Troubleshooting
+La actualización no se aplica
+
+Verifica que el deploymentKey sea correcto para el canal
+Revisa los logs de Logcat: adb logcat | grep Flopy
+Confirma que el bundle existe: /data/data/com.tuapp/files/flopy/updates/
+
+Bucle de reinicios
+El sistema detecta crashes y revierte automáticamente. Si hay bucle infinito:
+
+Desinstala y reinstala la app
+Revisa los logs del servidor para ver qué actualización está causando el problema
+
+Pantalla en blanco al cargar
+Si la app queda en blanco >5 segundos:
+
+El bundle puede ser muy grande (optimiza con Hermes)
+Verifica que getJSBundleFile() esté configurado en MainApplication
+
+
+Licencia
+MIT
+
+Soporte
+Para reportar bugs o solicitar features, abre un issue en el repositorio.
