@@ -27,6 +27,7 @@ class FlopyProvider extends React.Component<
   FlopyProviderState
 > {
   private appStartTime: number;
+  private hasMarkedSuccess: boolean = false;
 
   constructor(props: FlopyProviderProps) {
     super(props);
@@ -42,15 +43,10 @@ class FlopyProvider extends React.Component<
     return { hasError: true };
   }
 
-  /**
-   * El ciclo de vida `componentDidMount` ahora es el orquestador principal.
-   * Realiza una inicialización rápida y luego delega las tareas de red al fondo.
-   */
   componentDidMount(): void {
     Flopy._internalConfigure(this.props.options)
       .then(() => {
         this.setState({ isInitialized: true });
-
         this.runBackgroundTasks();
       })
       .catch((e) => {
@@ -64,31 +60,63 @@ class FlopyProvider extends React.Component<
       const state = stateRepository.getState();
       const options = stateRepository.getOptions();
 
+      console.log('[Flopy] Estado al iniciar:', JSON.stringify(state, null, 2));
+
+      // CRÍTICO: Solo marca como exitosa si es una versión estable
+      // (failedBootCount === 0 significa que NO es la primera vez)
       if (state.currentPackage) {
-        console.log('[Flopy] Marcando versión actual como exitosa...');
+        if (state.failedBootCount === 0) {
+          console.log(
+            '[Flopy] ✅ Versión estable detectada, marcando como exitosa...'
+          );
+          if (!this.hasMarkedSuccess) {
+            await NativeBridge.markSuccess();
+            this.hasMarkedSuccess = true;
+          }
+        } else {
+          console.log(
+            '[Flopy] ⏳ Primera carga de nueva versión (failedBootCount:',
+            state.failedBootCount,
+            ')'
+          );
+          console.log('[Flopy] Esperando confirmación de estabilidad...');
 
-        // SIEMPRE marca como exitosa al cargar
-        await NativeBridge.markSuccess();
+          // Después de 3 segundos sin crash, marca como exitosa
+          setTimeout(async () => {
+            try {
+              console.log(
+                '[Flopy] ✅ 3 segundos sin crash, marcando como exitosa...'
+              );
+              await NativeBridge.markSuccess();
+              this.hasMarkedSuccess = true;
 
-        // Si había fallos, reporta éxito
-        if (state.failedBootCount > 0) {
-          apiClient
-            .reportStatus(options, state.currentPackage.releaseId, 'SUCCESS')
-            .catch(console.error);
+              // Reporta éxito al servidor
+              apiClient
+                .reportStatus(
+                  options,
+                  state.currentPackage!.releaseId,
+                  'SUCCESS'
+                )
+                .catch(console.error);
+
+              stateRepository.resetBootStatus();
+            } catch (e) {
+              console.error('[Flopy] Error al marcar éxito:', e);
+            }
+          }, 3000);
         }
-
-        stateRepository.resetBootStatus();
+      } else {
+        console.log('[Flopy] No hay versión OTA activa, usando bundle nativo');
       }
 
-      // Sync en background
-      Flopy.sync().catch(console.error);
+      // Sync en background (sin bloquear)
+      setTimeout(() => {
+        Flopy.sync().catch(console.error);
+      }, 1000);
     } catch (e) {
       console.error('[Flopy] Error en background:', e);
     }
   }
-  /**
-   * Maneja los crashes de renderizado.
-   */
 
   async componentDidCatch(
     error: Error,
@@ -105,13 +133,13 @@ class FlopyProvider extends React.Component<
 
         if (state.currentPackage) {
           console.log(
-            '[Flopy] Crash detectado al inicio. Registrando fallo...'
+            '[Flopy] ❌ Crash detectado al inicio. Registrando fallo...'
           );
           stateRepository.recordFailedBoot();
 
           if (state.failedBootCount + 1 >= 2) {
             console.log(
-              '[Flopy] Demasiados fallos. Reportando y revirtiendo...'
+              '[Flopy] ⚠️ Demasiados fallos. Reportando y revirtiendo...'
             );
 
             apiClient
@@ -122,9 +150,17 @@ class FlopyProvider extends React.Component<
 
             this.setState({ isReverting: true });
             await stateRepository.revertToPreviousPackage();
+
+            // Espera a que se persista
+            await new Promise((resolve: any) => setTimeout(resolve, 100));
+
             RNRestart.restart();
           } else {
-            console.log('[Flopy] Primer fallo detectado, reiniciando...');
+            console.log('[Flopy] ⚠️ Primer fallo detectado, reiniciando...');
+
+            // Espera a que se persista el contador
+            await new Promise((resolve: any) => setTimeout(resolve, 100));
+
             RNRestart.restart();
           }
         }

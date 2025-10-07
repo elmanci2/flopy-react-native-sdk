@@ -14,6 +14,8 @@ class Flopy(private val context: Context) {
           context.getSharedPreferences("flopy_prefs", Context.MODE_PRIVATE)
 
   companion object {
+    private const val TAG = "Flopy"
+
     @Volatile private var instance: Flopy? = null
 
     fun getInstance(context: Context): Flopy =
@@ -24,67 +26,76 @@ class Flopy(private val context: Context) {
   }
 
   init {
-    // Crea el directorio si no existe
     if (!flopyDir.exists()) {
       flopyDir.mkdirs()
     }
 
-    // Limpia si cambió la versión de la app
     val currentAppVersion = getAppVersion()
     val storedAppVersion = sp.getString("appVersion", null)
 
     if (currentAppVersion != storedAppVersion) {
-      Log.d("Flopy", "App version changed, cleaning up...")
+      Log.i(TAG, "App version changed from $storedAppVersion to $currentAppVersion")
       sp.edit().clear().apply()
       sp.edit().putString("appVersion", currentAppVersion).apply()
       cleanOldVersions()
     }
   }
 
-  // ========== MÉTODO PRINCIPAL (como pushy) ==========
   fun getJSBundleFile(): String? {
-    val startTime = System.currentTimeMillis()
+    val currentVersion = sp.getString("currentVersion", null)
+    val firstTime = sp.getBoolean("firstTime", false)
+    val firstTimeOk = sp.getBoolean("firstTimeOk", true)
 
-    var currentVersion = sp.getString("currentVersion", null)
+    Log.i(TAG, "getJSBundleFile() - currentVersion: $currentVersion, firstTime: $firstTime, firstTimeOk: $firstTimeOk")
 
     if (currentVersion == null) {
-      Log.d("Flopy", "No current version, using assets")
+      Log.i(TAG, "No hay versión OTA, usando bundle nativo")
       return null
     }
 
-    // Test rollback si es necesario
-    if (!sp.getBoolean("firstTime", false)) {
-      if (!sp.getBoolean("firstTimeOk", true)) {
-        Log.d("Flopy", "First time NOT OK, rolling back...")
-        currentVersion = rollBack()
-      }
-    }
-
-    // Intenta encontrar un bundle válido
-    while (currentVersion != null) {
+    // Si es la primera vez y aún no se ha confirmado, intenta cargar la nueva versión
+    if (firstTime && !firstTimeOk) {
       val bundleFile = File(flopyDir, "updates/$currentVersion/index.android.bundle")
+      Log.i(TAG, "Primera carga de nueva versión. Bundle path: ${bundleFile.absolutePath}")
+      Log.i(TAG, "Bundle existe? ${bundleFile.exists()}")
 
       if (bundleFile.exists()) {
-        val elapsed = System.currentTimeMillis() - startTime
-        Log.d("Flopy", "✅ Bundle found in ${elapsed}ms: ${bundleFile.absolutePath}")
         return bundleFile.absolutePath
       }
 
-      Log.e("Flopy", "Bundle not found for version $currentVersion, rolling back...")
-      currentVersion = rollBack()
+      // Si falla, intenta con la versión anterior
+      val lastVersion = sp.getString("lastVersion", null)
+      Log.w(TAG, "Bundle de nueva versión no existe, intentando fallback a: $lastVersion")
+
+      if (lastVersion != null) {
+        val fallbackBundle = File(flopyDir, "updates/$lastVersion/index.android.bundle")
+        if (fallbackBundle.exists()) {
+          Log.i(TAG, "Usando bundle de versión anterior: ${fallbackBundle.absolutePath}")
+          return fallbackBundle.absolutePath
+        }
+      }
+
+      Log.e(TAG, "No se encontró ningún bundle válido")
+      return null
     }
 
-    val elapsed = System.currentTimeMillis() - startTime
-    Log.d("Flopy", "No valid bundle found in ${elapsed}ms, using assets")
-    return null
-  }
+    // Carga normal: usa la versión actual
+    val bundleFile = File(flopyDir, "updates/$currentVersion/index.android.bundle")
+    Log.i(TAG, "Carga normal. Bundle path: ${bundleFile.absolutePath}")
+    Log.i(TAG, "Bundle existe? ${bundleFile.exists()}")
 
-  // ========== GESTIÓN DE VERSIONES ==========
+    return if (bundleFile.exists()) bundleFile.absolutePath else null
+  }
 
   fun switchVersion(releaseId: String, hash: String) {
     val bundleFile = File(flopyDir, "updates/$releaseId/index.android.bundle")
+
+    Log.i(TAG, "switchVersion() - releaseId: $releaseId, hash: $hash")
+    Log.i(TAG, "Verificando bundle en: ${bundleFile.absolutePath}")
+    Log.i(TAG, "Bundle existe? ${bundleFile.exists()}")
+
     if (!bundleFile.exists()) {
-      throw Error("Bundle version $releaseId not found")
+      throw Error("Bundle version $releaseId not found at ${bundleFile.absolutePath}")
     }
 
     val lastVersion = sp.getString("currentVersion", null)
@@ -94,6 +105,7 @@ class Flopy(private val context: Context) {
     editor.putString("currentHash", hash)
 
     if (lastVersion != null && lastVersion != releaseId) {
+      Log.i(TAG, "Guardando versión anterior: $lastVersion")
       editor.putString("lastVersion", lastVersion)
       editor.putString("lastHash", sp.getString("currentHash", null))
     }
@@ -103,126 +115,116 @@ class Flopy(private val context: Context) {
     editor.putString("rolledBackVersion", null)
     editor.apply()
 
-    Log.d("Flopy", "Switched to version $releaseId")
+    Log.i(TAG, "Estado actualizado - firstTime: true, firstTimeOk: false")
   }
 
   fun markSuccess() {
+    Log.i(TAG, "markSuccess() llamado")
+
     val editor = sp.edit()
     editor.putBoolean("firstTimeOk", true)
+    editor.putBoolean("firstTime", false)
 
     val lastVersion = sp.getString("lastVersion", null)
     val curVersion = sp.getString("currentVersion", null)
 
     if (lastVersion != null && lastVersion != curVersion) {
+      Log.i(TAG, "Limpiando versión anterior: $lastVersion")
       editor.remove("lastVersion")
       editor.remove("lastHash")
-      // Limpia la versión anterior en background
+
       Thread {
-                try {
-                  val oldDir = File(flopyDir, "updates/$lastVersion")
-                  if (oldDir.exists()) {
-                    oldDir.deleteRecursively()
-                    Log.d("Flopy", "Cleaned up old version: $lastVersion")
-                  }
-                } catch (e: Exception) {
-                  Log.e("Flopy", "Error cleaning old version", e)
-                }
-              }
-              .start()
+        try {
+          val oldDir = File(flopyDir, "updates/$lastVersion")
+          if (oldDir.exists()) {
+            oldDir.deleteRecursively()
+            Log.i(TAG, "Versión anterior eliminada: $lastVersion")
+          }
+        } catch (e: Exception) {
+          Log.e(TAG, "Error al eliminar versión anterior", e)
+        }
+      }.start()
     }
 
     editor.apply()
-    Log.d("Flopy", "Marked as success")
+    Log.i(TAG, "Estado marcado como exitoso")
   }
 
   fun clearFirstTime() {
+    Log.i(TAG, "clearFirstTime() llamado")
     sp.edit().putBoolean("firstTime", false).apply()
-    Log.d("Flopy", "Cleared first time flag")
   }
-
-  // ========== ROLLBACK ==========
-
-  private fun rollBack(): String? {
-    val lastVersion = sp.getString("lastVersion", null)
-    val currentVersion = sp.getString("currentVersion", null)
-    val editor = sp.edit()
-
-    if (lastVersion == null) {
-      editor.remove("currentVersion")
-      editor.remove("currentHash")
-    } else {
-      editor.putString("currentVersion", lastVersion)
-      editor.putString("currentHash", sp.getString("lastHash", null))
-    }
-
-    editor.putBoolean("firstTimeOk", true)
-    editor.putBoolean("firstTime", false)
-    editor.putString("rolledBackVersion", currentVersion)
-    editor.apply()
-
-    Log.d("Flopy", "Rolled back from $currentVersion to $lastVersion")
-    return lastVersion
-  }
-
-  // ========== ESTADO PARA JS ==========
 
   fun saveState(stateMap: ReadableMap?) {
     if (stateMap == null) return
 
     try {
+      Log.i(TAG, "saveState() llamado con: ${stateMap.toHashMap()}")
+
       val editor = sp.edit()
 
-      // Current package
       if (stateMap.hasKey("currentPackage")) {
         val currentPackage = stateMap.getMap("currentPackage")
         if (currentPackage != null) {
-          editor.putString("currentVersion", currentPackage.getString("releaseId"))
-          editor.putString("currentHash", currentPackage.getString("hash"))
+          val releaseId = currentPackage.getString("releaseId")
+          val hash = currentPackage.getString("hash")
+          editor.putString("currentVersion", releaseId)
+          editor.putString("currentHash", hash)
+          Log.i(TAG, "Guardando currentPackage: $releaseId")
         }
       }
 
-      // Previous package
       if (stateMap.hasKey("previousPackage")) {
         val previousPackage = stateMap.getMap("previousPackage")
         if (previousPackage != null) {
-          editor.putString("lastVersion", previousPackage.getString("releaseId"))
-          editor.putString("lastHash", previousPackage.getString("hash"))
+          val releaseId = previousPackage.getString("releaseId")
+          val hash = previousPackage.getString("hash")
+          editor.putString("lastVersion", releaseId)
+          editor.putString("lastHash", hash)
+          Log.i(TAG, "Guardando previousPackage: $releaseId")
         }
+      } else {
+        editor.remove("lastVersion")
+        editor.remove("lastHash")
       }
 
-      // NUEVO: Pending update
       if (stateMap.hasKey("pendingUpdate")) {
         val pendingUpdate = stateMap.getMap("pendingUpdate")
         if (pendingUpdate != null) {
-          editor.putString("pendingVersion", pendingUpdate.getString("releaseId"))
-          editor.putString("pendingHash", pendingUpdate.getString("hash"))
-          editor.putBoolean("pendingIsMandatory", pendingUpdate.getBoolean("isMandatory"))
+          val releaseId = pendingUpdate.getString("releaseId")
+          val hash = pendingUpdate.getString("hash")
+          val isMandatory = pendingUpdate.getBoolean("isMandatory")
+          editor.putString("pendingVersion", releaseId)
+          editor.putString("pendingHash", hash)
+          editor.putBoolean("pendingIsMandatory", isMandatory)
+          Log.i(TAG, "Guardando pendingUpdate: $releaseId")
         }
       } else {
-        // Limpia pending si no existe
         editor.remove("pendingVersion")
         editor.remove("pendingHash")
         editor.remove("pendingIsMandatory")
       }
 
-      // Failed boot count
       val failedBootCount = stateMap.getInt("failedBootCount")
       editor.putBoolean("firstTime", failedBootCount > 0)
       editor.putBoolean("firstTimeOk", failedBootCount == 0)
 
+      Log.i(TAG, "failedBootCount: $failedBootCount -> firstTime: ${failedBootCount > 0}, firstTimeOk: ${failedBootCount == 0}")
+
       editor.apply()
-      Log.d("Flopy", "State saved")
+      Log.i(TAG, "Estado guardado exitosamente")
     } catch (e: Exception) {
-      Log.e("Flopy", "Error saving state", e)
+      Log.e(TAG, "Error al guardar estado", e)
     }
   }
 
   fun readState(): WritableMap? {
     val currentVersion = sp.getString("currentVersion", null)
 
+    Log.i(TAG, "readState() - currentVersion: $currentVersion")
+
     val state = Arguments.createMap()
 
-    // Current package
     if (currentVersion != null) {
       val currentPackage = Arguments.createMap()
       currentPackage.putString("releaseId", currentVersion)
@@ -231,7 +233,6 @@ class Flopy(private val context: Context) {
       state.putMap("currentPackage", currentPackage)
     }
 
-    // Previous package
     val lastVersion = sp.getString("lastVersion", null)
     if (lastVersion != null) {
       val previousPackage = Arguments.createMap()
@@ -241,7 +242,6 @@ class Flopy(private val context: Context) {
       state.putMap("previousPackage", previousPackage)
     }
 
-    // NUEVO: Pending update
     val pendingVersion = sp.getString("pendingVersion", null)
     if (pendingVersion != null) {
       val pendingUpdate = Arguments.createMap()
@@ -252,25 +252,24 @@ class Flopy(private val context: Context) {
       state.putMap("pendingUpdate", pendingUpdate)
     }
 
-    // Failed boot count
     val failedBootCount =
             if (sp.getBoolean("firstTime", false) && !sp.getBoolean("firstTimeOk", true)) 1 else 0
     state.putInt("failedBootCount", failedBootCount)
+
+    Log.i(TAG, "Estado leído: ${state.toHashMap()}")
 
     return if (state.toHashMap().isEmpty()) null else state
   }
 
   fun incrementFailedBootCount() {
+    Log.i(TAG, "incrementFailedBootCount() llamado")
     sp.edit().putBoolean("firstTimeOk", false).apply()
-    Log.d("Flopy", "Incremented failed boot count")
   }
 
   fun resetFailedBootCount() {
+    Log.i(TAG, "resetFailedBootCount() llamado")
     sp.edit().putBoolean("firstTimeOk", true).apply()
-    Log.d("Flopy", "Reset failed boot count")
   }
-
-  // ========== UTILIDADES ==========
 
   private fun getAppVersion(): String {
     return try {
@@ -283,17 +282,16 @@ class Flopy(private val context: Context) {
 
   private fun cleanOldVersions() {
     Thread {
-              try {
-                val updatesDir = File(flopyDir, "updates")
-                if (updatesDir.exists()) {
-                  updatesDir.deleteRecursively()
-                  Log.d("Flopy", "Cleaned all old versions")
-                }
-              } catch (e: Exception) {
-                Log.e("Flopy", "Error cleaning old versions", e)
-              }
-            }
-            .start()
+      try {
+        val updatesDir = File(flopyDir, "updates")
+        if (updatesDir.exists()) {
+          updatesDir.deleteRecursively()
+          Log.i(TAG, "Versiones antiguas eliminadas")
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Error al limpiar versiones", e)
+      }
+    }.start()
   }
 
   fun getRolledBackVersion(): String? {

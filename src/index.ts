@@ -58,6 +58,17 @@ class Flopy {
         console.log(
           `[Flopy] Se encontró una actualización pendiente: ${pendingUpdate.releaseId}`
         );
+
+        // Verifica que el bundle exista antes de aplicar
+        const bundleExists = await updateManager.verifyBundle(
+          pendingUpdate.releaseId
+        );
+        if (!bundleExists) {
+          console.log('[Flopy] ⚠️ Bundle pendiente no existe, limpiando...');
+          await stateRepository.clearPendingUpdate();
+          return SyncStatus.ERROR;
+        }
+
         const mode = pendingUpdate.isMandatory
           ? mandatoryInstallMode
           : installMode;
@@ -71,7 +82,12 @@ class Flopy {
           await stateRepository.switchToVersion(pendingUpdate);
           await stateRepository.clearPendingUpdate();
 
-          console.log('[Flopy] Actualización aplicada, reiniciando...');
+          console.log('[Flopy] ✅ Estado guardado, esperando 100ms...');
+
+          // Espera a que se persista el estado
+          await new Promise((resolve: any) => setTimeout(resolve, 100));
+
+          console.log('[Flopy] Reiniciando aplicación...');
           RNRestart.restart();
           return SyncStatus.UPDATE_INSTALLED;
         }
@@ -101,6 +117,15 @@ class Flopy {
       // PASO 3: Descarga la actualización
       const newPackageInfo = await updateManager.downloadAndApply(newPackage);
 
+      // Verifica que el bundle se haya descargado correctamente
+      const bundleExists = await updateManager.verifyBundle(
+        newPackage.releaseId
+      );
+      if (!bundleExists) {
+        console.error('[Flopy] ❌ Bundle no existe después de descargar');
+        throw new Error('Bundle no encontrado después de la descarga');
+      }
+
       const finalInstallMode = newPackage.isMandatory
         ? mandatoryInstallMode
         : installMode;
@@ -112,7 +137,13 @@ class Flopy {
         );
 
         await stateRepository.switchToVersion(newPackageInfo);
-        console.log('[Flopy] Actualización aplicada, reiniciando...');
+
+        console.log('[Flopy] ✅ Estado guardado, esperando 100ms...');
+
+        // Espera a que se persista el estado
+        await new Promise((resolve: any) => setTimeout(resolve, 100));
+
+        console.log('[Flopy] Reiniciando aplicación...');
         RNRestart.restart();
         return SyncStatus.UPDATE_INSTALLED;
       } else {
@@ -144,6 +175,10 @@ class Flopy {
     if (previousPackage) {
       console.log('[Flopy] Revirtiendo a la versión anterior...');
       await stateRepository.revertToPreviousPackage();
+
+      // Espera a que se persista
+      await new Promise((resolve: any) => setTimeout(resolve, 100));
+
       RNRestart.restart();
     } else {
       console.log('[Flopy] No hay una versión anterior a la que revertir.');

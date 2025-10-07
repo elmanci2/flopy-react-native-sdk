@@ -19,17 +19,16 @@ class StateRepository {
       JSON.stringify(packageInfo)
     );
 
-    // Usa el método optimizado
     await NativeBridge.switchVersion(packageInfo.releaseId, packageInfo.hash);
 
-    console.log('[Flopy SR] switchVersion nativo completado');
-
-    // Actualiza el estado local
     this.state!.previousPackage = this.state!.currentPackage;
     this.state!.currentPackage = packageInfo;
     this.state!.failedBootCount = 0;
 
-    console.log('[Flopy SR] Estado local actualizado');
+    // ← CRÍTICO: Guarda el estado
+    await this.saveState();
+
+    console.log('[Flopy SR] Estado guardado y actualizado');
   }
 
   async markUpdateSuccess(): Promise<void> {
