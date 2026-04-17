@@ -37,12 +37,153 @@ class RemoteUpdateModule(private val reactContext: ReactApplicationContext) :
       val contentResolver = reactContext.contentResolver
       val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
       constants["clientUniqueId"] = androidId ?: ""
+
+      // Read from strings.xml if they exist
+      constants["serverUrl"] = getStringResourceByName("flopy_server_url") ?: ""
+      constants["appId"] = getStringResourceByName("flopy_app_id") ?: ""
+      constants["channel"] = getStringResourceByName("flopy_channel") ?: "production"
+      constants["deploymentKey"] = getStringResourceByName("flopy_deployment_key") ?: ""
+
     } catch (e: Exception) {
       constants["flopyPath"] = ""
       constants["binaryVersion"] = ""
       constants["clientUniqueId"] = ""
     }
     return constants
+  }
+
+  private fun getStringResourceByName(name: String): String? {
+    val resId = reactContext.resources.getIdentifier(name, "string", reactContext.packageName)
+    return if (resId != 0) {
+      reactContext.getString(resId)
+    } else {
+      null
+    }
+  }
+
+  @ReactMethod
+  fun mkdir(path: String, promise: Promise) {
+    try {
+      val dir = File(path)
+      if (!dir.exists()) {
+        dir.mkdirs()
+      }
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("MKDIR_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun exists(path: String, promise: Promise) {
+    promise.resolve(File(path).exists())
+  }
+
+  @ReactMethod
+  fun unlink(path: String, promise: Promise) {
+    try {
+      val file = File(path)
+      if (file.exists()) {
+        if (file.isDirectory) {
+          file.deleteRecursively()
+        } else {
+          file.delete()
+        }
+      }
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("UNLINK_ERROR", e)
+    }
+  }
+
+  // Required for NativeEventEmitter support
+  @ReactMethod
+  fun addListener(eventName: String) {
+    // No-op: Required for RN event emitter
+  }
+
+  @ReactMethod
+  fun removeListeners(count: Int) {
+    // No-op: Required for RN event emitter
+  }
+
+  private val downloader by lazy { Downloader(reactContext) }
+
+  @ReactMethod
+  fun downloadFile(url: String, destination: String, downloadId: String, promise: Promise) {
+    downloader.download(url, destination, downloadId, promise)
+  }
+
+  @ReactMethod
+  fun getSha256(path: String, promise: Promise) {
+    try {
+      val file = File(path)
+      if (!file.exists()) {
+        promise.reject("HASH_ERROR", "File not found")
+        return
+      }
+      val digest = java.security.MessageDigest.getInstance("SHA-256")
+      val inputStream = file.inputStream()
+      val buffer = ByteArray(4096)
+      var bytesRead: Int
+      while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+        digest.update(buffer, 0, bytesRead)
+      }
+      inputStream.close()
+      val hashBytes = digest.digest()
+      val hexString = hashBytes.joinToString("") { "%02x".format(it) }
+      promise.resolve(hexString)
+    } catch (e: Exception) {
+      promise.reject("HASH_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun moveFile(from: String, to: String, promise: Promise) {
+    try {
+      val source = File(from)
+      val dest = File(to)
+      if (source.renameTo(dest)) {
+        promise.resolve(null)
+      } else {
+        // Fallback for moving across filesystems
+        source.copyTo(dest, overwrite = true)
+        source.delete()
+        promise.resolve(null)
+      }
+    } catch (e: Exception) {
+      promise.reject("MOVE_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun readDir(path: String, promise: Promise) {
+    try {
+      val dir = File(path)
+      if (!dir.exists() || !dir.isDirectory) {
+        promise.resolve(Arguments.createArray())
+        return
+      }
+      val array = Arguments.createArray()
+      dir.listFiles()?.forEach { array.pushString(it.name) }
+      promise.resolve(array)
+    } catch (e: Exception) {
+      promise.reject("READ_DIR_ERROR", e)
+    }
+  }
+
+  @ReactMethod
+  fun getFileSize(path: String, promise: Promise) {
+    try {
+      val file = File(path)
+      if (file.exists()) {
+        promise.resolve(file.length().toDouble())
+      } else {
+        promise.resolve(0.0)
+      }
+    } catch (e: Exception) {
+      promise.reject("SIZE_ERROR", e)
+    }
   }
 
   /** Descomprime un archivo .zip en un directorio de destino. */

@@ -37,19 +37,20 @@ class StateRepository {
     this.state!.failedBootCount = 0;
   }
 
-  async initialize(developerOptions: FlopyOptions): Promise<void> {
+  async initialize(resolvedOptions: Required<FlopyOptions>): Promise<void> {
     if (this.isInitialized) return;
 
     const nativeConstants = NativeBridge.getConstants();
     this.options = {
-      serverUrl: developerOptions.serverUrl,
-      appId: developerOptions.appId,
-      channel: developerOptions.channel,
-      deploymentKey: developerOptions.deploymentKey,
+      serverUrl: resolvedOptions.serverUrl,
+      appId: resolvedOptions.appId,
+      channel: resolvedOptions.channel,
+      deploymentKey: resolvedOptions.deploymentKey,
       binaryVersion:
-        developerOptions.binaryVersion || nativeConstants.binaryVersion,
+        resolvedOptions.binaryVersion || nativeConstants.binaryVersion,
       clientUniqueId:
-        developerOptions.clientUniqueId || nativeConstants.clientUniqueId,
+        resolvedOptions.clientUniqueId || nativeConstants.clientUniqueId,
+      forceJsConfig: resolvedOptions.forceJsConfig,
     };
 
     const persistedState = await NativeBridge.readState();
@@ -69,6 +70,7 @@ class StateRepository {
       };
     }
 
+    this.flopyPath = nativeConstants.flopyPath || '';
     this.isInitialized = true;
     console.log(
       '[Flopy SR] Repositorio inicializado. Estado final:',
@@ -117,12 +119,14 @@ class StateRepository {
     await this.saveState();
   }
 
-  recordFailedBoot(): void {
+  async recordFailedBoot(): Promise<void> {
     this.ensureInitialized();
     NativeBridge.recordFailedBoot();
     if (this.state) {
       this.state.failedBootCount++;
     }
+    // Persistir el estado para que sobreviva un reinicio
+    await this.saveState();
   }
 
   resetBootStatus(): void {

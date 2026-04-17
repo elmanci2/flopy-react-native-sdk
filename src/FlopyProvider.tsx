@@ -6,7 +6,9 @@ import { stateRepository } from './services/StateRepository';
 import { apiClient } from './services/ApiClient';
 import NativeBridge, { RNRestart } from './native/NativeBridge';
 import type { FlopyOptions } from './types';
-import Flopy from './index';
+
+// Lazy import para romper la dependencia circular FlopyProvider <-> index
+const getFlopy = () => require('./index').default;
 
 interface FlopyProviderProps {
   children: ReactNode;
@@ -28,6 +30,9 @@ class FlopyProvider extends React.Component<
 > {
   private appStartTime: number;
   private hasMarkedSuccess: boolean = false;
+  private successTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncTimer: ReturnType<typeof setTimeout> | null = null;
+  private isMounted_: boolean = false;
 
   constructor(props: FlopyProviderProps) {
     super(props);
@@ -44,15 +49,33 @@ class FlopyProvider extends React.Component<
   }
 
   componentDidMount(): void {
-    Flopy._internalConfigure(this.props.options)
+    this.isMounted_ = true;
+    getFlopy()
+      ._internalConfigure(this.props.options)
       .then(() => {
-        this.setState({ isInitialized: true });
-        this.runBackgroundTasks();
+        if (this.isMounted_) {
+          this.setState({ isInitialized: true });
+          this.runBackgroundTasks();
+        }
       })
-      .catch((e) => {
+      .catch((e: Error) => {
         console.error('[Flopy] Fallo crítico durante la inicialización:', e);
-        this.setState({ isInitialized: true, hasError: true });
+        if (this.isMounted_) {
+          this.setState({ isInitialized: true, hasError: true });
+        }
       });
+  }
+
+  componentWillUnmount(): void {
+    this.isMounted_ = false;
+    if (this.successTimer) {
+      clearTimeout(this.successTimer);
+      this.successTimer = null;
+    }
+    if (this.syncTimer) {
+      clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+    }
   }
 
   private async runBackgroundTasks(): Promise<void> {
@@ -82,7 +105,8 @@ class FlopyProvider extends React.Component<
           console.log('[Flopy] Esperando confirmación de estabilidad...');
 
           // Después de 3 segundos sin crash, marca como exitosa
-          setTimeout(async () => {
+          this.successTimer = setTimeout(async () => {
+            if (!this.isMounted_) return;
             try {
               console.log(
                 '[Flopy] ✅ 3 segundos sin crash, marcando como exitosa...'
@@ -110,8 +134,8 @@ class FlopyProvider extends React.Component<
       }
 
       // Sync en background (sin bloquear)
-      setTimeout(() => {
-        Flopy.sync().catch(console.error);
+      this.syncTimer = setTimeout(() => {
+        getFlopy().sync().catch(console.error);
       }, 1000);
     } catch (e) {
       console.error('[Flopy] Error en background:', e);
@@ -135,7 +159,7 @@ class FlopyProvider extends React.Component<
           console.log(
             '[Flopy] ❌ Crash detectado al inicio. Registrando fallo...'
           );
-          stateRepository.recordFailedBoot();
+          await stateRepository.recordFailedBoot();
 
           if (state.failedBootCount + 1 >= 2) {
             console.log(
@@ -152,14 +176,14 @@ class FlopyProvider extends React.Component<
             await stateRepository.revertToPreviousPackage();
 
             // Espera a que se persista
-            await new Promise((resolve: any) => setTimeout(resolve, 100));
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
             RNRestart.restart();
           } else {
             console.log('[Flopy] ⚠️ Primer fallo detectado, reiniciando...');
 
             // Espera a que se persista el contador
-            await new Promise((resolve: any) => setTimeout(resolve, 100));
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
             RNRestart.restart();
           }
@@ -176,11 +200,15 @@ class FlopyProvider extends React.Component<
     }
 
     if (this.state.hasError && this.state.isReverting) {
-      return this.props.fallback || null;
+      // Está revirtiendo a una versión anterior, mostrar fallback
+      return this.props.fallback || <View style={styles.container} />;
     }
 
+    // Si hay error pero NO estamos revirtiendo, mostrar fallback.
+    // React no resetea el error boundary, así que re-renderizar
+    // children que ya fallaron causaría un crash loop infinito.
     if (this.state.hasError) {
-      return this.props.children;
+      return this.props.fallback || <View style={styles.container} />;
     }
 
     return this.props.children;
@@ -192,3 +220,41 @@ const styles = StyleSheet.create({
 });
 
 export { FlopyProvider };
+
+/**
+ * HOC estilo CodePush para envolver la app con el sistema OTA de Flopy.
+ *
+ * @example
+ * // Con opciones
+ * MyApp = flopy({ serverUrl: '...', appId: '...' })(MyApp);
+ *
+ * // Sin opciones (lee config del nativo)
+ * MyApp = flopy()(MyApp);
+ *
+ * // También disponible como Flopy.wrap()
+ * MyApp = Flopy.wrap({ serverUrl: '...', appId: '...' })(MyApp);
+ */
+export function flopy(options: FlopyOptions = {}) {
+  return function wrap<P extends Record<string, any>>(
+    WrappedComponent: React.ComponentType<P>
+  ): React.ComponentType<P> {
+    class FlopyHOC extends React.Component<P> {
+      render() {
+        return (
+          <FlopyProvider options={options}>
+            <WrappedComponent {...this.props} />
+          </FlopyProvider>
+        );
+      }
+    }
+
+    // Display name para React DevTools
+    const displayName =
+      (WrappedComponent as any).displayName ||
+      WrappedComponent.name ||
+      'Component';
+    (FlopyHOC as any).displayName = `Flopy(${displayName})`;
+
+    return FlopyHOC;
+  };
+}

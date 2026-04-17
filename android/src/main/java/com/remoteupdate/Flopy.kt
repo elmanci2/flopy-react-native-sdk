@@ -35,8 +35,7 @@ class Flopy(private val context: Context) {
 
     if (currentAppVersion != storedAppVersion) {
       Log.i(TAG, "App version changed from $storedAppVersion to $currentAppVersion")
-      sp.edit().clear().apply()
-      sp.edit().putString("appVersion", currentAppVersion).apply()
+      sp.edit().clear().putString("appVersion", currentAppVersion).apply()
       cleanOldVersions()
     }
   }
@@ -99,6 +98,7 @@ class Flopy(private val context: Context) {
     }
 
     val lastVersion = sp.getString("currentVersion", null)
+    val lastHash = sp.getString("currentHash", null)
     val editor = sp.edit()
 
     editor.putString("currentVersion", releaseId)
@@ -107,7 +107,7 @@ class Flopy(private val context: Context) {
     if (lastVersion != null && lastVersion != releaseId) {
       Log.i(TAG, "Guardando versión anterior: $lastVersion")
       editor.putString("lastVersion", lastVersion)
-      editor.putString("lastHash", sp.getString("currentHash", null))
+      editor.putString("lastHash", lastHash)
     }
 
     editor.putBoolean("firstTime", true)
@@ -172,6 +172,12 @@ class Flopy(private val context: Context) {
           editor.putString("currentHash", hash)
           Log.i(TAG, "Guardando currentPackage: $releaseId")
         }
+      } else {
+        // CRÍTICO: Si currentPackage es undefined, limpiar la versión actual
+        // para que la app vuelva al bundle nativo
+        editor.remove("currentVersion")
+        editor.remove("currentHash")
+        Log.i(TAG, "Limpiando currentPackage (revert a bundle nativo)")
       }
 
       if (stateMap.hasKey("previousPackage")) {
@@ -258,7 +264,9 @@ class Flopy(private val context: Context) {
 
     Log.i(TAG, "Estado leído: ${state.toHashMap()}")
 
-    return if (state.toHashMap().isEmpty()) null else state
+    // Solo retorna null si no hay ningún estado significativo persistido
+    // (failedBootCount siempre existe, así que isEmpty() nunca es true)
+    return if (currentVersion == null && lastVersion == null && pendingVersion == null) null else state
   }
 
   fun incrementFailedBootCount() {

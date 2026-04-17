@@ -15,8 +15,16 @@ class ApiClient {
   }
 
   configure(serverUrl: string, deploymentKey: string): void {
+    if (!serverUrl.startsWith('https://') && !__DEV__) {
+      console.warn(
+        '[Flopy] ⚠️ SEGURIDAD: serverUrl debe usar HTTPS en producción. ' +
+          'Las actualizaciones OTA sin cifrar son vulnerables a ataques MITM.'
+      );
+    }
+
     this.client.defaults.baseURL = serverUrl;
     this.client.defaults.headers.common['X-Deployment-Key'] = deploymentKey;
+    this.client.defaults.timeout = 15000; // 15s timeout para API calls
     this.isConfigured = true;
   }
 

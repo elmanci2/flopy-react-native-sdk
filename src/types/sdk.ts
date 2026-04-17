@@ -1,12 +1,13 @@
 // src/types/sdk.ts
 
 export interface FlopyOptions {
-  serverUrl: string;
-  appId: string;
-  channel: string;
-  deploymentKey: string;
+  serverUrl?: string;
+  appId?: string;
+  channel?: string;
+  deploymentKey?: string;
   binaryVersion?: string;
   clientUniqueId?: string;
+  forceJsConfig?: boolean;
 }
 
 export enum SyncStatus {

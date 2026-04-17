@@ -2,29 +2,50 @@
 
 import { stateRepository } from './services/StateRepository';
 import { updateManager } from './services/UpdateManager';
-import NativeBridge, { RNRestart } from './native/NativeBridge';
+import NativeBridge, {
+  RNRestart,
+  FlopyEventEmitter,
+} from './native/NativeBridge';
 import { apiClient } from './services/ApiClient';
 import { InstallMode, SyncStatus } from './types';
 import type { FlopyOptions, PackageInfo, SyncOptions } from './types/sdk';
 
-export { FlopyProvider } from './FlopyProvider';
+export { FlopyProvider, flopy } from './FlopyProvider';
+import { flopy as flopyHOC } from './FlopyProvider';
 export { SyncStatus };
 
 class Flopy {
+  private static isSyncing: boolean = false;
   static async _internalConfigure(
     developerOptions: FlopyOptions
   ): Promise<void> {
     const nativeConstants = NativeBridge.getConstants();
+    const forceJs = developerOptions.forceJsConfig === true;
 
     const finalOptions: Required<FlopyOptions> = {
-      serverUrl: developerOptions.serverUrl,
-      appId: developerOptions.appId,
-      channel: developerOptions.channel,
-      deploymentKey: developerOptions.deploymentKey,
+      serverUrl:
+        (forceJs
+          ? developerOptions.serverUrl
+          : nativeConstants.serverUrl || developerOptions.serverUrl) || '',
+      appId:
+        (forceJs
+          ? developerOptions.appId
+          : nativeConstants.appId || developerOptions.appId) || '',
+      channel:
+        (forceJs
+          ? developerOptions.channel
+          : nativeConstants.channel || developerOptions.channel) ||
+        'production',
+      deploymentKey:
+        (forceJs
+          ? developerOptions.deploymentKey
+          : nativeConstants.deploymentKey || developerOptions.deploymentKey) ||
+        '',
       binaryVersion:
         developerOptions.binaryVersion || nativeConstants.binaryVersion,
       clientUniqueId:
         developerOptions.clientUniqueId || nativeConstants.clientUniqueId,
+      forceJsConfig: forceJs,
     };
 
     if (
@@ -48,6 +69,12 @@ class Flopy {
       installMode = InstallMode.ON_NEXT_RESTART,
       mandatoryInstallMode = InstallMode.IMMEDIATE,
     } = options;
+
+    if (Flopy.isSyncing) {
+      console.log('[Flopy] Sync ya en progreso, ignorando llamada duplicada.');
+      return SyncStatus.CHECKING_FOR_UPDATE;
+    }
+    Flopy.isSyncing = true;
 
     let releaseId: string | null = null;
 
@@ -85,7 +112,7 @@ class Flopy {
           console.log('[Flopy] ✅ Estado guardado, esperando 100ms...');
 
           // Espera a que se persista el estado
-          await new Promise((resolve: any) => setTimeout(resolve, 100));
+          await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
           console.log('[Flopy] Reiniciando aplicación...');
           RNRestart.restart();
@@ -141,7 +168,7 @@ class Flopy {
         console.log('[Flopy] ✅ Estado guardado, esperando 100ms...');
 
         // Espera a que se persista el estado
-        await new Promise((resolve: any) => setTimeout(resolve, 100));
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
         console.log('[Flopy] Reiniciando aplicación...');
         RNRestart.restart();
@@ -167,6 +194,8 @@ class Flopy {
         );
       }
       return SyncStatus.ERROR;
+    } finally {
+      Flopy.isSyncing = false;
     }
   }
 
@@ -177,7 +206,7 @@ class Flopy {
       await stateRepository.revertToPreviousPackage();
 
       // Espera a que se persista
-      await new Promise((resolve: any) => setTimeout(resolve, 100));
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
       RNRestart.restart();
     } else {
@@ -188,6 +217,22 @@ class Flopy {
   static async getUpdateMetadata(): Promise<PackageInfo | undefined> {
     return stateRepository.getCurrentPackage();
   }
+
+  /**
+   * Permite escuchar eventos del SDK (ej: downloadProgress, downloadFinished)
+   */
+  static addListener(event: string, callback: (data: any) => void) {
+    return FlopyEventEmitter.addListener(event, callback);
+  }
+
+  /**
+   * HOC estilo CodePush para envolver la app con Flopy.
+   *
+   * @example
+   * import Flopy from 'flopy-react-native-sdk';
+   * MyApp = Flopy.wrap({ serverUrl: '...', appId: '...' })(MyApp);
+   */
+  static wrap = flopyHOC;
 }
 
 export * from './types';

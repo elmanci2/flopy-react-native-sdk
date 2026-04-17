@@ -1,7 +1,10 @@
 // src/utils/DebugHelper.ts
-import RNFS from 'react-native-fs';
+import { Platform } from 'react-native';
 import NativeBridge from '../native/NativeBridge';
 import { stateRepository } from '../services/StateRepository';
+
+const BUNDLE_FILENAME =
+  Platform.OS === 'ios' ? 'main.jsbundle' : 'index.android.bundle';
 
 export class FlopyDebugHelper {
   /**
@@ -21,10 +24,9 @@ export class FlopyDebugHelper {
     // Lista todos los bundles en disco
     let bundlesOnDisk: string[] = [];
     try {
-      const exists = await RNFS.exists(updatesPath);
+      const exists = await NativeBridge.exists(updatesPath);
       if (exists) {
-        const dirs = await RNFS.readDir(updatesPath);
-        bundlesOnDisk = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
+        bundlesOnDisk = await NativeBridge.readDir(updatesPath);
       }
     } catch (e) {
       console.error('[Debug] Error al leer updates:', e);
@@ -33,8 +35,8 @@ export class FlopyDebugHelper {
     // Verifica cada bundle
     const bundleVerifications: Record<string, boolean> = {};
     for (const releaseId of bundlesOnDisk) {
-      const bundlePath = `${updatesPath}/${releaseId}/index.android.bundle`;
-      bundleVerifications[releaseId] = await RNFS.exists(bundlePath);
+      const bundlePath = `${updatesPath}/${releaseId}/${BUNDLE_FILENAME}`;
+      bundleVerifications[releaseId] = await NativeBridge.exists(bundlePath);
     }
 
     const debugInfo = {
@@ -68,15 +70,14 @@ export class FlopyDebugHelper {
     size?: number;
   }> {
     const constants = NativeBridge.getConstants();
-    const bundlePath = `${constants.flopyPath}/updates/${releaseId}/index.android.bundle`;
+    const bundlePath = `${constants.flopyPath}/updates/${releaseId}/${BUNDLE_FILENAME}`;
 
-    const exists = await RNFS.exists(bundlePath);
+    const exists = await NativeBridge.exists(bundlePath);
     let size: number | undefined;
 
     if (exists) {
       try {
-        const stat: any = await RNFS.stat(bundlePath);
-        size = parseInt(stat.size);
+        size = await NativeBridge.getFileSize(bundlePath);
       } catch (e) {
         console.error('[Debug] Error al obtener tamaño:', e);
       }
@@ -95,18 +96,13 @@ export class FlopyDebugHelper {
     const updatePath = `${constants.flopyPath}/updates/${releaseId}`;
 
     try {
-      const exists = await RNFS.exists(updatePath);
+      const exists = await NativeBridge.exists(updatePath);
       if (!exists) {
         console.log('[Debug] Update directory does not exist:', updatePath);
         return [];
       }
 
-      const contents = await RNFS.readDir(updatePath);
-      const files = contents.map((item) => ({
-        name: item.name,
-        isDirectory: item.isDirectory(),
-        size: item.size,
-      }));
+      const files = await NativeBridge.readDir(updatePath);
 
       console.log(
         '[Debug] Contents of',
@@ -114,7 +110,7 @@ export class FlopyDebugHelper {
         ':',
         JSON.stringify(files, null, 2)
       );
-      return files.map((f) => f.name);
+      return files;
     } catch (e) {
       console.error('[Debug] Error listing contents:', e);
       return [];
@@ -140,9 +136,9 @@ export class FlopyDebugHelper {
     const updatesPath = `${constants.flopyPath}/updates`;
 
     try {
-      const exists = await RNFS.exists(updatesPath);
+      const exists = await NativeBridge.exists(updatesPath);
       if (exists) {
-        await RNFS.unlink(updatesPath);
+        await NativeBridge.unlink(updatesPath);
         console.log('[Debug] ✅ Updates eliminados');
       }
     } catch (e) {

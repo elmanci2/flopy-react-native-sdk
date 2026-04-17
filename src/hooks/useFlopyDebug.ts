@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import FlopyDebugHelper from '../utils/DebugHelper';
 import Flopy from '../index';
+import { InstallMode } from '../types';
 import { RNRestart } from '../native/NativeBridge';
 
 export function useFlopyDebug() {
@@ -38,7 +39,7 @@ export function useFlopyDebug() {
 
   const syncAndRestart = async () => {
     console.log('[Debug] Ejecutando sync...');
-    await Flopy.sync({ installMode: 1 });
+    await Flopy.sync({ installMode: InstallMode.ON_NEXT_RESTART });
   };
 
   const manualRestart = () => {
