@@ -54,7 +54,10 @@ class Flopy {
       );
     }
 
-    if (!finalOptions.deploymentKey && (!finalOptions.appId || !finalOptions.channel)) {
+    if (
+      !finalOptions.deploymentKey &&
+      (!finalOptions.appId || !finalOptions.channel)
+    ) {
       throw new Error(
         'Faltan opciones requeridas en la configuración de Flopy: debes proveer un deploymentKey, o en su defecto appId y channel.'
       );

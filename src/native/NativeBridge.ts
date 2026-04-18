@@ -54,7 +54,7 @@ interface INativeBridge {
 const BaseModule = NativeModules.FlopyModule;
 
 const FlopyModule = BaseModule
-  ? new Proxy(BaseModule, {
+  ? (new Proxy(BaseModule, {
       get(target, prop) {
         if (prop === 'getConstants') {
           return () => ({
@@ -72,8 +72,8 @@ const FlopyModule = BaseModule
           return val.bind(target);
         }
         return val;
-      }
-    }) as INativeBridge
+      },
+    }) as INativeBridge)
   : new Proxy({} as INativeBridge, {
       get(_target, prop) {
         if (prop === 'getConstants') {
