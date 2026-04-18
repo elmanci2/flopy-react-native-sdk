@@ -54,18 +54,26 @@ interface INativeBridge {
 const BaseModule = NativeModules.FlopyModule;
 
 const FlopyModule = BaseModule
-  ? ({
-      ...BaseModule,
-      getConstants: () => ({
-        flopyPath: BaseModule.flopyPath || '',
-        binaryVersion: BaseModule.binaryVersion || '',
-        clientUniqueId: BaseModule.clientUniqueId || '',
-        serverUrl: BaseModule.serverUrl,
-        appId: BaseModule.appId,
-        channel: BaseModule.channel,
-        deploymentKey: BaseModule.deploymentKey,
-      }),
-    } as INativeBridge)
+  ? new Proxy(BaseModule, {
+      get(target, prop) {
+        if (prop === 'getConstants') {
+          return () => ({
+            flopyPath: target.flopyPath || '',
+            binaryVersion: target.binaryVersion || '',
+            clientUniqueId: target.clientUniqueId || '',
+            serverUrl: target.serverUrl,
+            appId: target.appId,
+            channel: target.channel,
+            deploymentKey: target.deploymentKey,
+          });
+        }
+        const val = target[prop];
+        if (typeof val === 'function') {
+          return val.bind(target);
+        }
+        return val;
+      }
+    }) as INativeBridge
   : new Proxy({} as INativeBridge, {
       get(_target, prop) {
         if (prop === 'getConstants') {

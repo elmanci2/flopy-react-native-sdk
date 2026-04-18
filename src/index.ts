@@ -48,13 +48,15 @@ class Flopy {
       forceJsConfig: forceJs,
     };
 
-    if (
-      !finalOptions.serverUrl ||
-      !finalOptions.appId ||
-      !finalOptions.channel
-    ) {
+    if (!finalOptions.serverUrl) {
       throw new Error(
-        'Faltan opciones requeridas en la configuración de Flopy: serverUrl, appId, o channel.'
+        'Faltan opciones requeridas en la configuración de Flopy: serverUrl.'
+      );
+    }
+
+    if (!finalOptions.deploymentKey && (!finalOptions.appId || !finalOptions.channel)) {
+      throw new Error(
+        'Faltan opciones requeridas en la configuración de Flopy: debes proveer un deploymentKey, o en su defecto appId y channel.'
       );
     }
 
